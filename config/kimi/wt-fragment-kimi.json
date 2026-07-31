@@ -1,0 +1,12 @@
+{
+    "$schema": "https://aka.ms/terminal-profiles-schema",
+    "profiles": [
+        {
+            "name": "Claude (Kimi)",
+            "commandline": "powershell.exe -NoExit -ExecutionPolicy Bypass -File C:\\Users\\{{WIN_USER}}\\.config\\kimi\\kimi-env.ps1",
+            "startingDirectory": "%USERPROFILE%",
+            "tabTitle": "Claude (Kimi)",
+            "hidden": false
+        }
+    ]
+}

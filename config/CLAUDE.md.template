@@ -1,0 +1,83 @@
+# CLAUDE.md
+
+This file provides global guidance to Claude Code (claude.ai/code) when working with code across all projects. Detailed operational reference lives in `~/.claude/rules/` (all files load every session — index at the bottom).
+
+## Core Rules
+
+These rules apply to every session, every project, without exception.
+
+1. **NEVER jump to execution without explicit confirmation.** Always present the plan first and wait for approval before running code, launching subagents, or making file changes.
+
+2. **Ask questions first when collaborating.** Do not pre-solve or be prescriptive. Wait for user input before proposing solutions. If the user says "collaborate," treat it as a back-and-forth dialogue — not a chance to deliver a finished product.
+
+3. **Use provided resources directly.** When the user provides a URL, repo link, file path, or specific resource, use it directly. Do not web search for alternatives or summarize instead of fetching.
+
+4. **Download READMEs and docs before installing or configuring tools.** WebFetch uses an AI intermediary that summarizes and loses critical details. For setup docs, READMEs, and configuration guides: `curl` the raw file to disk, then `Read` it in full. Misreading install docs leads to broken setups and wrong mental models of how the tool works.
+
+5. **Read before assuming.** When working with existing data (names, paths, folder structures, file contents), read and verify the actual data before processing. Do not assume formats or values.
+
+6. **This is a Windows environment.** Scripts and shell commands must be Windows-compatible. See `rules/windows-commands.md` and `rules/wsl-patterns.md` for specifics. Test commands for Windows compatibility before running.
+
+7. **Never raise context window concerns.** Do not suggest stopping, breaking, or deferring work because of context length. The user manages context. Raising it is condescending and reads as laziness.
+
+8. **Prefer in-house LLM calls over external SDKs.** When creating briefs, plans, scripts, or anything that needs LLM inference, default to in-house calls — Claude Code's Task/Agent tool, subagent invocation, slash commands, or direct prompts within the active session. Do not import the `anthropic`, `openai`, or other LLM SDKs unless the user explicitly asks for it OR the use case truly requires async / scheduled / headless execution outside a Claude Code session (e.g., a cron job, a CI step). When in doubt, ask before reaching for an external SDK.
+
+9. **Invoke a tool's skill BEFORE using the tool.** For any installed tooling that has a dedicated Claude Code skill — `caam`, `dcg`, `ntm`, `vibing-with-ntm`, `br` (beads-br), `bv` (beads-bv), `beads-workflow`, `cass`, `cass-memory` (cm), `agent-mail`, `multi-agent-swarm-workflow`, `ms`, `jsm`, `ctx7` (find-docs), `firecrawl`, `defuddle`, `dev-browser`, `git-commit-craftsman`, `git-repo-janitor`, `git-stash-janitor`, etc. — invoke `/<skill-name>` via the Skill tool **before** running tool commands. The skill loads canonical reference: flag semantics, integration model, gotchas, anti-patterns. Skipping this leads to wrong-flag guesses based on parsed help text (e.g. ntm `--no-hooks` is for ntm-internal command-tracking hooks, NOT the `CLAUDE_CODE_HOOKS` env var injection — verified only after loading the `/ntm` skill and its INTEGRATIONS.md reference; the canonical safety path for ntm-spawned panes is `ntm safety install` + `~/.ntm/bin` PATH precedence, not `--no-hooks`). No exceptions: even tools you think you remember well evolve, and the skill catches the evolution.
+
+   **Reactive dcg exception (invoke ON block, not only before use):** `dcg` is the one skill you also invoke *reactively*. The instant a `BLOCKED by dcg` message fires, invoke the `/dcg` skill via the Skill tool BEFORE reacting in any way — do not improvise a workaround, do not retry a reworded command, do not mention or run `allow-once` from memory. The skill loads the canonical block workflow: `dcg explain "<exact cmd>"` to see the trace → check the Safe Alternatives table → use the safe path silently (don't mention override), or, if there is genuinely no safe alternative, explain the risk plainly and let the human run `dcg allow-once CODE` themselves. Guessing a reworded command is how a real safe-alternative gets missed, or how a genuinely-dangerous variant slips through. Blocks are checkpoints, not errors.
+
+## Writing Style
+
+- **Plain, direct English only.** No jargon, clever phrasing, or marketing-speak unless explicitly requested.
+- **Match the user's voice.** When editing or rewriting from source material, preserve the user's tone — do not substitute your own style.
+- **Never add cleverness.** Straightforward > sophisticated. If in doubt, use simpler words and shorter sentences.
+
+## Prompt Engineering Anti-Pattern: Enforcement Over Structure
+
+If you need to add "Must include X" or "NEVER do Y" to enforce behavior that the system should produce naturally, the structure is wrong. Band-aid enforcement instructions are noise when the structure works and useless when it doesn't.
+
+Examples of the anti-pattern:
+
+- Adding "Must include Concept Vocabulary" to a JSON field description when an upstream instruction already tells the model to generate and append it
+- Writing "// removed — never re-add" after deleting code
+- Prefixing instructions with "IMPORTANT:" or "CRITICAL:" to compensate for weak structural guarantees
+
+The fix is always structural: design the prompt, schema, or code so the desired behavior is the natural output — not an enforced overlay. If the output is wrong, fix the instruction that produces it, not the description that receives it.
+
+**Carve-out for runtime behavioral guardrails.** This anti-pattern applies to LLM pipelines where you control the upstream prompt/schema that produces the output. It does NOT apply to durable Claude Code behavioral rules in this CLAUDE.md where the only "structure" available is the rule's own clarity — there is no upstream prompt to fix because the rule IS the upstream. For runtime guardrails (e.g., "never reach for `bash -lc '...'` when the script has variables"), aggressive imperative wording, prohibited-token lists, named rationalization-shutdowns, and "no exceptions" framing are the structural fix, not the band-aid. The test for the carve-out is: is there a layer above this rule where a structural change would make the rule unnecessary? If yes (output schema, upstream prompt, code generator), fix that instead. If no (rule governs the rule-reader's runtime behavior with no upstream), aggressive enforcement language is correct.
+
+## Development Workflow
+
+When working with files:
+
+- **Content files** are typically Markdown (.md) for easy editing and version control
+- **Agent definitions** are ready-to-use with Claude Code's Task tool
+- **Configuration** is managed through `.claude/settings.local.json`
+- **Auto-open in Obsidian**: Whenever a Markdown (.md) file inside an Obsidian vault is created or modified, open it in Obsidian (invoke the `obsidian-cli` skill first for correct CLI syntax) so the user can review it. Do NOT open Markdown files in VS Code.
+- **Launch the Obsidian app first if it's closed**: check `Get-Process Obsidian`; if not running, launch `C:\Program Files\Obsidian\Obsidian.exe`, wait a few seconds for it to boot, THEN open the requested note. Firing the open-note request at a cold app can miss before Obsidian is ready.
+- **Project bootstrap for multi-agent work**: one canonical `AGENTS.md` per project, imported by the project `CLAUDE.md` via a first-line `@AGENTS.md` — every agent type (Claude, Codex, Gemini) reads one file. (The official Windows-safe import mechanism; symlinks need admin/dev-mode.)
+
+## Obsidian Vault Operations
+
+**Always run the `obsidian-cli` skill first when performing Obsidian vault operations.** Before creating, reading, searching, or managing notes via code, invoke the obsidian-cli skill to ensure you're using the CLI correctly and targeting the right vault. The CLI interacts with a running Obsidian instance and provides commands for notes, properties, search, tasks, tags, backlinks, and more.
+
+## Institutional Knowledge Location
+
+**Methodologies, research, and reference documents belong in the Obsidian vault (`References/` folder), NOT in skill directories.** Skill `references/` folders are for pipeline-specific implementation details only (dispatch tables, hook patterns, format specs). Reusable methodologies, operationalized processes, and research findings are institutional knowledge — they live in the vault with proper frontmatter, wiki links, and vault conventions.
+
+As you build out your own vault, keep an index of methodology docs (pipeline-construction notes, deliverable-spec conventions, vault-creation conventions, or whatever recurring processes you develop) under `References/` so they're discoverable outside any one skill or project.
+
+## Framework Guidelines
+
+- Do NOT introduce new frameworks or libraries without explicit approval
+- Maintain existing architecture and patterns
+- Follow established styling approaches
+
+## Rules Directory Index (`~/.claude/rules/` — all files load every session)
+
+- **`windows-commands.md`** — Windows command discipline: GitHub-README-exactly rule, no emojis in code, process management, streamable-by-design output, bash-over-cmd, Windows gotchas (schtasks/chmod/symlink-writes/networking/BITS/PowerShell-BOM), Python on Windows, the secrets-in-`.env.private` pattern.
+- **`wsl-patterns.md`** — WSL invocation discipline (heredoc rules + pre-rejected rationalizations) and the Win+WSL hybrid architecture: cross-OS symlinks, the WSL boot hook, credentials watcher, hot/cold filesystem rule + hot-data enforcement, auth-vs-identity split, claude trust wrapper, IS_SANDBOX, smoke-test status.
+- **`ntm-swarm.md`** — NTM swarm operations: the full gotcha catalog, Kimi panes, `.git/` dialog cascade, paste-placeholder trap, model-staleness re-confirm rule, and swarm conventions (bead-ID threading, staggered starts, PCR, SLB, AGENTS.md bootstrap).
+- **`tools-reference.md`** — per-tool operational reference (cass, cm, br, bv, jsm, caam, ms, ctx7, fmd, defuddle, firecrawl, slb, pcr, srps, branch-back), data-heavy MCP guidance, web-testing viewport standard, CodeRabbit review policy.
+- **`mcp-and-services.md`** — MCP scopes + current registration commands, Agent Mail architecture (WSL server, 127.0.0.1 convention), Morph MCP usage, n8n workflow automation.
+- **`context7.md`** — the ctx7 documentation-fetch contract.

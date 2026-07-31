@@ -1,0 +1,12 @@
+# Triaged false positives (teaching examples, honeypot fixtures, fake test tokens).
+# Each fingerprint reviewed 2026-07-31 during the bundle privacy gate.
+docs/methodology/deliverable-spec-methodology.md:generic-api-key:420
+skills/agent-mail/references/TOOLS.md:generic-api-key:252
+planning/docs-cache/ubs-README-full.md:generic-api-key:855
+skills/git-repo-janitor/SELF-TEST.md:generic-api-key:167
+skills/documentation-website-for-software-project/references/ADVANCED-NEXTRA.md:generic-api-key:546
+skills/git-repo-janitor/references/LEAK-TAXONOMY.md:private-key:13
+skills/git-repo-janitor/references/LEAK-TAXONOMY.md:private-key:16
+skills/security-audit-for-saas/references/HONEYPOTS-AND-DECEPTION.md:generic-api-key:148
+skills/security-audit-for-saas/references/HONEYPOTS-AND-DECEPTION.md:generic-api-key:154
+skills/security-audit-for-saas/references/HONEYPOTS-AND-DECEPTION.md:curl-auth-header:164

@@ -1,0 +1,55 @@
+# ~/.profile: executed by Bourne-compatible login shells.
+
+if [ "$BASH" ]; then
+  if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+  fi
+fi
+
+mesg n 2> /dev/null || true
+
+export PATH="/usr/local/bin:/root/.local/bin:$PATH"
+
+# D-Bus session bus + gnome-keyring for jsm credential storage (headless WSL)
+_DBUS_ADDR_FILE="/tmp/.dbus-session-$(id -u)"
+if [ ! -f "$_DBUS_ADDR_FILE" ] || ! pgrep -u "$(id -u)" -x dbus-daemon >/dev/null 2>&1; then
+  dbus-daemon --session --print-address --fork > "$_DBUS_ADDR_FILE" 2>/dev/null
+fi
+if [ -f "$_DBUS_ADDR_FILE" ]; then
+  export DBUS_SESSION_BUS_ADDRESS=$(cat "$_DBUS_ADDR_FILE")
+fi
+if ! pgrep -u "$(id -u)" -x gnome-keyring-d >/dev/null 2>&1; then
+  printf '\n' | gnome-keyring-daemon --daemonize --unlock --components=secrets >/dev/null 2>&1
+fi
+
+# Auto-start credentials.json symlink watcher (WSL→Windows; idempotent)
+[ -x /root/.local/bin/ensure-claude-creds-watcher.sh ] && \
+    /root/.local/bin/ensure-claude-creds-watcher.sh
+
+# Allow Claude Code --dangerously-skip-permissions as root (WSL is sandboxed)
+export IS_SANDBOX=1
+
+# NTM safety wrappers (git, rm) — MUST be before /usr/bin per ntm safety install
+export PATH="$HOME/.ntm/bin:$PATH"
+
+# host.docker.internal -> WSL gateway (mirrored services on Windows host)
+# Idempotent; checks /etc/hosts directly. Re-runs every shell login (cheap).
+_GW=$(ip route show default 2>/dev/null | awk '{print $3}')
+if [ -n "$_GW" ] && ! grep -q "^$_GW host\.docker\.internal\$" /etc/hosts 2>/dev/null; then
+  sed -i '/host\.docker\.internal/d' /etc/hosts 2>/dev/null
+  echo "$_GW host.docker.internal" >> /etc/hosts 2>/dev/null
+fi
+unset _GW
+
+# Hot-data enforcement (9p mitigation) — wraps pnpm/npm/yarn/cargo/pip/uv/poetry/pipenv/python
+# on /mnt/c projects to refuse installs unless node_modules/.venv/target/etc are ext4-symlinked.
+# See /root/.local/lib/hot-data-enforce.sh — escape hatch: HOT_DATA_ENFORCE_OFF=1
+[ -f /root/.local/lib/hot-data-enforce.sh ] && source /root/.local/lib/hot-data-enforce.sh || true
+
+# Python: redirect ALL __pycache__ to ext4 (Python 3.8+; saves thousands of /mnt/c writes)
+export PYTHONPYCACHEPREFIX=/root/.cache/pycache
+[ -d "$PYTHONPYCACHEPREFIX" ] || mkdir -p "$PYTHONPYCACHEPREFIX" 2>/dev/null
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
+# Private tokens live in a separate untracked file
+[ -f /root/.env.private ] && source /root/.env.private

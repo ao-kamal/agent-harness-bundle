@@ -1,0 +1,12 @@
+# Raw planning/survey material — contains unsanitized machine inventory. Never ships.
+planning/
+
+# Safety net: no secret-bearing files, ever
+*.env
+**/config.env
+**/*.key
+**/secrets*
+
+# OS/editor junk
+Thumbs.db
+.DS_Store

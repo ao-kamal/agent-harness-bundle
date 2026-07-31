@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# ntm cc-router: a Kimi-aware shim for the [agents].claude launch template.
+# If the pane's --model starts with "kimi", route to the Kimi Code subscription
+# endpoint; otherwise launch normal Claude (subscription/OAuth left untouched).
+model=""; prev=""
+for a in "$@"; do [ "$prev" = "--model" ] && model="$a"; prev="$a"; done
+case "$model" in
+  kimi*)
+    export ANTHROPIC_BASE_URL="https://api.kimi.com/coding/"
+    export ANTHROPIC_AUTH_TOKEN="$(cat /mnt/c/Users/{{WIN_USER}}/.config/kimi/key)"
+    unset ANTHROPIC_API_KEY
+    export ANTHROPIC_DEFAULT_OPUS_MODEL="kimi-for-coding"
+    export ANTHROPIC_DEFAULT_SONNET_MODEL="kimi-for-coding"
+    export ANTHROPIC_DEFAULT_HAIKU_MODEL="kimi-for-coding"
+    export ANTHROPIC_SMALL_FAST_MODEL="kimi-for-coding"
+    export CLAUDE_CODE_SUBAGENT_MODEL="kimi-for-coding"
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=262144
+    ;;
+  *)
+    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_SMALL_FAST_MODEL CLAUDE_CODE_SUBAGENT_MODEL
+    ;;
+esac
+exec /usr/local/bin/claude "$@"

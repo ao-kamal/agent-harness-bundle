@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# init-fast-data: redirect a project's hot-data dir(s) to native ext4 via symlink.
+# Prevents WSL2 9p slowness on SQLite/locks/fsync-heavy data.
+# Usage: cd into project root on /mnt/c/, then: init-fast-data .beads target
+# Idempotent — existing symlinks are skipped (with target validation);
+# existing dirs are CROSS-FS COPIED to ext4 (with size verify), then source deleted.
+
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: init-fast-data <relpath> [<relpath2>...]" >&2
+  echo "  example: init-fast-data .beads target node_modules" >&2
+  exit 1
+fi
+
+pwd_resolved="$(pwd -P)"
+if [[ "$pwd_resolved" != /mnt/c/* ]]; then
+  echo "init-fast-data: only useful when run from /mnt/c/* (current: $pwd_resolved)" >&2
+  echo "  if you're already on ext4, you don't need this." >&2
+  exit 1
+fi
+
+proj_name="$(basename "$pwd_resolved")"
+data_root="/root/projects-data/$proj_name"
+mkdir -p "$data_root"
+
+# Source-path stamp: detect basename collisions (e.g., /mnt/c/foo/myapp vs /mnt/c/bar/myapp).
+stamp_file="$data_root/.init-fast-data.source"
+if [[ -f "$stamp_file" ]]; then
+  recorded_source="$(cat "$stamp_file")"
+  if [[ "$recorded_source" != "$pwd_resolved" ]]; then
+    echo "[ERROR] data_root collision: $data_root was set up for $recorded_source" >&2
+    echo "  Current source: $pwd_resolved" >&2
+    echo "  Two projects with the same basename are colliding. Choose:" >&2
+    echo "    (a) move the existing data_root aside (mv $data_root ${data_root}.<suffix>), OR" >&2
+    echo "    (b) rename one of the projects" >&2
+    exit 1
+  fi
+else
+  echo "$pwd_resolved" > "$stamp_file"
+fi
+
+for rel in "$@"; do
+  proj_path="$pwd_resolved/$rel"
+  data_path="$data_root/$rel"
+
+  # Already a symlink? Verify target is under /root/ (true ext4 redirect).
+  if [[ -L "$proj_path" ]]; then
+    current_target="$(readlink -f "$proj_path" 2>/dev/null || true)"
+    if [[ "$current_target" == /root/* ]]; then
+      echo "[skip] $rel — already symlinked to ext4 → $current_target"
+      continue
+    else
+      echo "[WARN] $rel — symlinked to $current_target (NOT ext4). Refusing to migrate." >&2
+      echo "  Run init-fast-data from the dir where the actual data lives, not from a symlink-host." >&2
+      continue
+    fi
+  fi
+
+  # Open-handle check: refuse if anything is using files inside target.
+  # /proc walk instead of `lsof +D` because:
+  #   (1) `lsof +D` recurses the dir tree — on /mnt/c over 9p with a node_modules
+  #       of thousands of files it can take 3-10+ minutes per call, unbounded.
+  #   (2) `lsof` misses mmap'd files (how Node loads modules) — false negatives.
+  # /proc/{pid}/{fd,cwd,exe,maps} covers all four legit "in use" signals at ~50ms.
+  if [[ -d "$proj_path" ]]; then
+    target_real="$(readlink -f "$proj_path" 2>/dev/null || echo "$proj_path")"
+    open_handles=""
+    for proc_dir in /proc/[0-9]*; do
+      [[ -d "$proc_dir" ]] || continue
+      pid="${proc_dir##*/}"
+      # cwd
+      cwd_link="$(readlink "$proc_dir/cwd" 2>/dev/null || true)"
+      case "$cwd_link" in
+        "$target_real"/*|"$proj_path"/*) open_handles+="$pid: cwd=$cwd_link"$'\n' ;;
+      esac
+      # exe
+      exe_link="$(readlink "$proc_dir/exe" 2>/dev/null || true)"
+      case "$exe_link" in
+        "$target_real"/*|"$proj_path"/*) open_handles+="$pid: exe=$exe_link"$'\n' ;;
+      esac
+      # open file descriptors (first hit per pid)
+      if [[ -d "$proc_dir/fd" ]]; then
+        for fd_link in "$proc_dir"/fd/*; do
+          [[ -L "$fd_link" ]] || continue
+          fd_target="$(readlink "$fd_link" 2>/dev/null || true)"
+          case "$fd_target" in
+            "$target_real"/*|"$proj_path"/*)
+              open_handles+="$pid: fd-> $fd_target"$'\n'
+              break
+              ;;
+          esac
+        done
+      fi
+      # mmap'd files (the class lsof misses)
+      if [[ -r "$proc_dir/maps" ]] && grep -qE " ($target_real|$proj_path)/" "$proc_dir/maps" 2>/dev/null; then
+        mapped_file="$(grep -oE " ($target_real|$proj_path)/[^ ]+" "$proc_dir/maps" 2>/dev/null | head -1 | sed 's/^ //')"
+        open_handles+="$pid: mmap=$mapped_file"$'\n'
+      fi
+    done
+
+    if [[ -n "$open_handles" ]]; then
+      echo "[ERROR] $rel - open handles detected:" >&2
+      echo "$open_handles" | head -5 >&2
+      echo "  Refusing to migrate. Stop the holding processes then re-run." >&2
+      exit 1
+    fi
+  fi
+
+  if [[ -e "$proj_path" ]]; then
+    # Cross-fs migration: copy + verify + delete source. Rollback on failure.
+    mkdir -p "$(dirname "$data_path")"
+    echo "[copy] $rel — copying to ext4 (cross-fs; may be slow for large dirs)..."
+    if ! cp -a "$proj_path" "$data_path"; then
+      echo "[ERROR] copy failed; cleaning partial dest" >&2
+      rm -rf "$data_path"
+      exit 1
+    fi
+    # Verify byte-size match (rough integrity check).
+    src_size="$(du -sb "$proj_path" 2>/dev/null | cut -f1)"
+    dst_size="$(du -sb "$data_path" 2>/dev/null | cut -f1)"
+    if [[ "$src_size" != "$dst_size" ]]; then
+      echo "[ERROR] verification failed: src=$src_size dst=$dst_size; cleaning partial dest" >&2
+      rm -rf "$data_path"
+      exit 1
+    fi
+    echo "[verify] $rel — sizes match ($src_size bytes)"
+    rm -rf "$proj_path"
+  else
+    mkdir -p "$data_path"
+    echo "[create] $rel — fresh dir at $data_path"
+  fi
+
+  ln -s "$data_path" "$proj_path"
+  echo "[link] $rel → $data_path"
+
+  # gitignore: check BOTH /rel and bare-rel forms before adding (avoid near-duplicates).
+  if [[ -f "$pwd_resolved/.gitignore" ]]; then
+    if ! grep -qFx "/$rel" "$pwd_resolved/.gitignore" && ! grep -qFx "$rel" "$pwd_resolved/.gitignore"; then
+      echo "/$rel" >> "$pwd_resolved/.gitignore"
+      echo "[gitignore] added /$rel"
+    fi
+  fi
+done
+
+echo ""
+echo "Layout for $proj_name (source: $pwd_resolved):"
+for rel in "$@"; do
+  ls -la "$pwd_resolved/$rel" 2>/dev/null | head -1
+done

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Detect Forgotten Sessions"
+  short_description: "Find crash-interrupted forgotten work"
+  default_prompt: "Use $detect-forgotten-sessions-post-crash to find Codex and Claude sessions interrupted by a crash, identify which ones were never resumed, and print the actionable resume commands."

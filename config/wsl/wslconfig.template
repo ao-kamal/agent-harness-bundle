@@ -1,0 +1,26 @@
+[wsl2]
+# Memory/swap ceilings: size these relative to YOUR machine's total RAM, not
+# these placeholder values. A common starting point is roughly total_RAM/2,
+# capped around 8GB, then bumped if you hit WSL OOM kills during multi-pane
+# ntm swarms (concurrent claude processes + build tooling are the usual
+# trigger). Increase swap alongside memory to give the kernel more room to
+# move cold pages out of the way during transient spikes.
+memory={{WSL_MEMORY}}
+processors=4
+swap={{WSL_SWAP}}
+
+# Mirrored networking: WSL shares the Windows network stack (same interfaces +
+# routes) instead of NAT. Useful if you run a VPN on the Windows side (NAT-mode
+# WSL can get blackholed while a VPN tunnel is up) and lets WSL-hosted services
+# be reachable from Windows without NAT-mode's host.docker.internal indirection.
+# Takes effect on `wsl --shutdown`.
+#
+# MANDATORY CONVENTION: under mirrored mode, always reach a WSL-hosted service
+# from Windows via 127.0.0.1, NEVER localhost. Windows resolves `localhost` to
+# IPv6 `::1` first; WSL-hosted servers (Agent Mail, etc.) typically listen
+# IPv4-only, and mirrored mode blackholes the IPv6 loopback path instead of
+# fast-refusing — the probe hangs to timeout instead of failing loud. This
+# exact trap can look like "the service is down" for weeks if you don't know
+# to check it. `curl.exe http://127.0.0.1:<port>/...` works instantly on the
+# same server that `Invoke-WebRequest http://localhost:<port>` false-hangs on.
+networkingMode=mirrored

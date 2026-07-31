@@ -1,0 +1,90 @@
+# Component Template: {ComponentName}
+
+Copy this template and replace `{ComponentName}` with your actual component name.
+
+---
+
+```tsx
+// src/components/{ComponentName}/{ComponentName}.tsx
+import { forwardRef, memo } from 'react'
+import { cn } from '@/lib/utils'
+import type { {ComponentName}Props } from './types'
+
+/**
+ * {ComponentName} - [Brief description of what this component does]
+ *
+ * @example
+ * ```tsx
+ * <{ComponentName} variant="primary" />
+ * ```
+ */
+export const {ComponentName} = memo(forwardRef<HTMLDivElement, {ComponentName}Props>(
+  function {ComponentName}(
+    {
+      variant = 'default',
+      size = 'md',
+      className,
+      children,
+      ...props
+    },
+    ref
+  ) {
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          // Base styles
+          'relative inline-flex items-center justify-center',
+          // Variant styles
+          variant === 'default' && 'bg-background text-foreground',
+          variant === 'primary' && 'bg-primary text-primary-foreground',
+          variant === 'secondary' && 'bg-secondary text-secondary-foreground',
+          // Size styles
+          size === 'sm' && 'h-8 px-3 text-sm',
+          size === 'md' && 'h-10 px-4 text-base',
+          size === 'lg' && 'h-12 px-6 text-lg',
+          // Custom className
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </div>
+    )
+  }
+))
+
+// Display name for React DevTools
+{ComponentName}.displayName = '{ComponentName}'
+```
+
+---
+
+## Usage Notes
+
+### When to use `memo()`
+- Component receives primitive props (strings, numbers, booleans)
+- Component is pure (same props = same output)
+- Component renders frequently in lists or parent re-renders
+
+### When NOT to use `memo()`
+- Component has internal state that changes often
+- Props are complex objects that change reference often
+- Component is lightweight and memo overhead isn't worth it
+
+### `forwardRef` Pattern
+Always use `forwardRef` when:
+- Parents may need to access the DOM element
+- Component wraps native elements
+- Component is used in form libraries (react-hook-form, etc.)
+
+---
+
+## Customization Points
+
+Replace these placeholders:
+- `{ComponentName}` - Your component name (PascalCase)
+- `HTMLDivElement` - Change if wrapping different element (e.g., `HTMLButtonElement`)
+- Variant options - Customize to your design system
+- Size options - Adjust to your spacing scale
+- Base styles - Match your project's design patterns

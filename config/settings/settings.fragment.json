@@ -1,0 +1,32 @@
+{
+  "skillListingBudgetFraction": 0.06,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "& 'C:\\Users\\{{WIN_USER}}\\.local\\bin\\dcg.exe'",
+            "shell": "powershell"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\{{WIN_USER}}\\.claude\\hooks\\post-compact-reminder.py\""
+          }
+        ]
+      }
+    ]
+  },
+  "tui": "fullscreen",
+  "env": {
+    "DCG_HOOK_TIMEOUT_MS": "2000"
+  }
+}

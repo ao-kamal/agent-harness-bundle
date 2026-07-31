@@ -1,0 +1,44 @@
+filters:
+  and:
+    - file.inFolder("Clippings")
+    - 'file.ext == "md"'
+
+formulas:
+  days_ago: '(now() - file.ctime).days'
+
+properties:
+  formula.days_ago:
+    displayName: "Days Ago"
+  consumed:
+    displayName: "Read/Watched"
+
+views:
+  - type: table
+    name: "Unread"
+    filters:
+      and:
+        - 'consumed == false'
+    order:
+      - file.name
+      - author
+      - type
+      - categories
+      - processed_date
+      - consumed
+    groupBy:
+      property: type
+      direction: ASC
+    summaries:
+      consumed: Unchecked
+
+  - type: table
+    name: "All Clippings"
+    order:
+      - file.name
+      - author
+      - type
+      - categories
+      - processed_date
+      - consumed
+    summaries:
+      consumed: Unchecked

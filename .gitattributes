@@ -1,0 +1,18 @@
+# Line-ending contract. The WSL-side files MUST stay LF — bash chokes on CRLF
+# ("\r: command not found") and this repo is cloned on Windows where autocrlf
+# would otherwise mangle them at checkout.
+* text=auto
+
+# Everything that executes in WSL/bash: LF, always
+*.sh text eol=lf
+*.py text eol=lf
+*.lua text eol=lf
+*.base text eol=lf
+config/wsl/** text eol=lf
+config/kimi/cc-router text eol=lf
+payload/bin/branch-back text eol=lf
+
+# Windows-native scripts: CRLF
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+*.cmd text eol=crlf

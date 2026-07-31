@@ -1,0 +1,953 @@
+#!/usr/bin/env python3
+"""branch-back — fork a Claude Code session at an arbitrary past message.
+
+Built-in /branch only forks at the current cursor. This forks anywhere — across
+compactions, far back in history, by line / timestamp / grep.
+
+Run `branch-back robot-docs guide` for the agent-targeted handbook.
+Run `branch-back capabilities --json` for the contract.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import uuid as _uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+VERSION = "0.2.0"
+CONTRACT_VERSION = "1.1.0"
+
+# Stable namespace for content-addressed session UUIDv5 derivation. Treat as
+# a magic constant — changing it invalidates idempotency across the install.
+_UUID_NAMESPACE = _uuid.UUID("6f5e8d4c-7a3b-4c2d-9e1f-8a7b6c5d4e3f")
+
+# Pollution filter: messages whose user/prompt text starts with these markers
+# are skill-loads, system reminders, or transcript metadata that masquerade
+# as user input. Centralized so future Claude Code envelope changes have one
+# place to update.
+_PROMPT_POLLUTION_PREFIXES = ("<",)
+_PROMPT_POLLUTION_SUBSTRINGS = ("Base directory for this skill",)
+
+
+def _is_prompt_pollution(text: str) -> bool:
+    if any(text.startswith(p) for p in _PROMPT_POLLUTION_PREFIXES):
+        return True
+    head = text[:200]
+    return any(s in head for s in _PROMPT_POLLUTION_SUBSTRINGS)
+
+EXIT_OK = 0
+EXIT_USER_INPUT = 1
+# argparse owns 2 (it exits 2 on invalid args). Skip 2 for our codes so an
+# agent can disambiguate "argparse rejected my args" from a domain refusal
+# without parsing stderr.
+EXIT_ENV = 3
+EXIT_CORRUPTION = 4
+EXIT_MID_TURN_REFUSE = 5
+
+PROJECTS_ROOT = Path.home() / ".claude" / "projects"
+
+
+def stderr(msg: str) -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Path helpers
+# ---------------------------------------------------------------------------
+
+def cwd_to_slug(cwd: Path) -> str:
+    """Match Claude Code's cwd → project-dir-slug transform."""
+    s = str(cwd.resolve())
+    return s.replace(":", "-").replace("\\", "-").replace("/", "-")
+
+
+def resolve_project_dir(project: str | None) -> Path:
+    """Resolve the project dir. Precedence: --project arg > env > cwd auto-detect."""
+    if project:
+        # Treat as slug if no path separators, else as direct path.
+        if "/" in project or "\\" in project:
+            p = Path(project)
+        else:
+            p = PROJECTS_ROOT / project
+        if not p.exists():
+            raise BranchBackError(
+                EXIT_USER_INPUT,
+                f"ERR-101: project dir not found: {p}\n\nList available projects with:\n  ls {PROJECTS_ROOT}",
+            )
+        return p
+    override = os.environ.get("BRANCH_BACK_PROJECT_DIR")
+    if override:
+        p = Path(override)
+        if not p.exists():
+            raise BranchBackError(EXIT_ENV, f"ERR-201: BRANCH_BACK_PROJECT_DIR points at nonexistent path: {p}")
+        return p
+    # Auto-detect from cwd.
+    slug = cwd_to_slug(Path.cwd())
+    p = PROJECTS_ROOT / slug
+    if not p.exists():
+        raise BranchBackError(
+            EXIT_USER_INPUT,
+            f"ERR-102: no Claude Code project dir for cwd ({Path.cwd()}).\n"
+            f"Tried: {p}\n\n"
+            f"Pass --project <slug> explicitly, or cd into a project that has a Claude Code session.",
+        )
+    return p
+
+
+def resolve_session(project_dir: Path, session: str | None) -> Path:
+    """Resolve session UUID (or path) → JSONL Path. Default: most recent.
+
+    Accepts UUID, UUID.jsonl, or absolute/relative path. Strips trailing
+    `.jsonl` from UUID-style args so users pasting filenames don't end up
+    with `<uuid>.jsonl.jsonl`.
+    """
+    if session:
+        if "/" in session or "\\" in session:
+            p = Path(session)
+        else:
+            uuid_part = session[:-6] if session.endswith(".jsonl") else session
+            p = project_dir / f"{uuid_part}.jsonl"
+        if not p.exists():
+            raise BranchBackError(
+                EXIT_USER_INPUT,
+                f"ERR-103: session JSONL not found: {p}\n\nList sessions with:\n  ls {project_dir}/*.jsonl",
+            )
+        return p
+    jsonls = sorted(project_dir.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True)
+    if not jsonls:
+        raise BranchBackError(EXIT_ENV, f"ERR-202: no JSONL sessions found in {project_dir}")
+    return jsonls[0]
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+class BranchBackError(Exception):
+    def __init__(self, exit_code: int, message: str):
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.message = message
+
+
+# ---------------------------------------------------------------------------
+# JSONL load + classify
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Line:
+    n: int
+    msg: dict
+
+
+def load_lines(path: Path) -> list[Line]:
+    out: list[Line] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for i, raw in enumerate(f, 1):
+            raw = raw.rstrip("\n")
+            if not raw.strip():
+                continue
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError as e:
+                stderr(f"WARN: line {i} unparseable: {e}")
+                continue
+            out.append(Line(n=i, msg=msg))
+    return out
+
+
+def classify(msg: dict) -> str:
+    t = msg.get("type")
+    if t == "summary":
+        return "summary"
+    if t == "ai-title":
+        return "ai-title"
+    if t == "user":
+        content = msg.get("message", {}).get("content", "")
+        if isinstance(content, list):
+            kinds = {c.get("type") for c in content if isinstance(c, dict)}
+            if "tool_result" in kinds:
+                return "user/tool_result"
+            if "text" in kinds:
+                return "user/prompt"
+            return f"user/{','.join(sorted(k or '?' for k in kinds))}"
+        return "user/prompt"
+    if t == "assistant":
+        content = msg.get("message", {}).get("content", [])
+        if isinstance(content, list):
+            kinds = {c.get("type") for c in content if isinstance(c, dict)}
+            if "tool_use" in kinds:
+                return "assistant/tool_use"
+            if "text" in kinds:
+                return "assistant/text"
+            if "thinking" in kinds:
+                return "assistant/thinking"
+            return f"assistant/{','.join(sorted(k or '?' for k in kinds))}"
+        return "assistant/text"
+    return f"meta/{t}"
+
+
+def extract_text(msg: dict) -> str:
+    """Best-effort full-text extraction from a message."""
+    if msg.get("type") == "summary":
+        return msg.get("summary", "") or ""
+    if msg.get("type") == "ai-title":
+        return msg.get("aiTitle", "") or ""
+    content = msg.get("message", {}).get("content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        bits = []
+        for c in content:
+            if not isinstance(c, dict):
+                continue
+            if c.get("type") == "text":
+                bits.append(c.get("text", "") or "")
+            elif c.get("type") == "thinking":
+                bits.append(c.get("thinking", "") or "")
+        return "\n".join(bits)
+    return ""
+
+
+def is_user_prompt(msg: dict) -> bool:
+    if msg.get("type") != "user":
+        return False
+    content = msg.get("message", {}).get("content", "")
+    if isinstance(content, str):
+        return True
+    if isinstance(content, list):
+        kinds = {c.get("type") for c in content if isinstance(c, dict)}
+        return "tool_result" not in kinds
+    return False
+
+
+def is_clean_cut_boundary(prev_msg: dict, next_msg: dict | None) -> bool:
+    """A cut between prev (kept) and next (dropped) is clean iff next starts a fresh turn."""
+    if next_msg is None:
+        return True
+    return is_user_prompt(next_msg)
+
+
+# ---------------------------------------------------------------------------
+# Search subcommand
+# ---------------------------------------------------------------------------
+
+def parse_iso(s: str) -> datetime:
+    s = s.strip()
+    # Accept naive YYYY-MM-DD as midnight UTC.
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return datetime.fromisoformat(s + "T00:00:00+00:00")
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def search_lines(
+    lines: list[Line],
+    grep: str | None,
+    since: datetime | None,
+    until: datetime | None,
+    kind: str,
+    limit: int,
+) -> dict:
+    """Return {matches, total_matched, truncated}.
+
+    Take the MOST RECENT N matches (chronological order preserved). Cutting
+    off after the first N would return the oldest matches in long sessions —
+    useless when narrowing "where did I most recently say X?". `truncated`
+    tells the caller whether older matches were dropped to fit the limit.
+    """
+    pattern = re.compile(grep, re.IGNORECASE) if grep else None
+    matches: list[dict] = []
+    for ln in lines:
+        cls = classify(ln.msg)
+        if kind == "prompt" and cls != "user/prompt":
+            continue
+        if kind == "assistant" and not cls.startswith("assistant/"):
+            continue
+        if kind == "both" and not (cls == "user/prompt" or cls.startswith("assistant/")):
+            continue
+        ts_str = ln.msg.get("timestamp")
+        ts: datetime | None = None
+        if ts_str:
+            try:
+                ts = parse_iso(ts_str)
+            except Exception:
+                ts = None
+        if since and ts and ts < since:
+            continue
+        if until and ts and ts > until:
+            continue
+        text = extract_text(ln.msg)
+        if not text:
+            continue
+        if cls == "user/prompt" and _is_prompt_pollution(text):
+            continue
+        if pattern and not pattern.search(text):
+            continue
+        preview = text.replace("\n", " ").strip()
+        if len(preview) > 240:
+            preview = preview[:237] + "..."
+        matches.append({
+            "line": ln.n,
+            "timestamp": ts_str,
+            "kind": cls,
+            "preview": preview,
+            "length": len(text),
+        })
+    total = len(matches)
+    if limit <= 0:
+        return {"matches": [], "total_matched": total, "truncated": total > 0}
+    truncated = total > limit
+    if truncated:
+        matches = matches[-limit:]
+    return {"matches": matches, "total_matched": total, "truncated": truncated}
+
+
+# ---------------------------------------------------------------------------
+# Inspect subcommand
+# ---------------------------------------------------------------------------
+
+def inspect_around(lines: list[Line], target: int, window: int) -> dict:
+    by_n = {ln.n: ln for ln in lines}
+    line_nums = sorted(by_n.keys())
+    if not line_nums:
+        return {"total_lines": 0, "target": target, "candidates": []}
+    target_idx = next((i for i, n in enumerate(line_nums) if n >= target), len(line_nums))
+    start = max(0, target_idx - window)
+    end = min(len(line_nums), target_idx + 3)
+    out = []
+    for i in range(start, end):
+        n = line_nums[i]
+        ln = by_n[n]
+        next_msg = by_n[line_nums[i + 1]].msg if i + 1 < len(line_nums) else None
+        clean = is_clean_cut_boundary(ln.msg, next_msg)
+        text = extract_text(ln.msg).replace("\n", " ").strip()
+        if len(text) > 100:
+            text = text[:97] + "..."
+        out.append({
+            "line": n,
+            "classification": classify(ln.msg),
+            "clean_cut": clean,
+            "preview": text,
+            "is_target": n == target,
+        })
+    return {
+        "total_lines": len(line_nums),
+        "target": target,
+        "candidates": out,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cut subcommand
+# ---------------------------------------------------------------------------
+
+def derive_session_uuid(source: Path, cut_at: int, title: str) -> str:
+    """Deterministic RFC4122-compliant UUIDv5 from kept content + cut + title.
+
+    Idempotency contract: same kept bytes + same cut_at + same title → same UUID,
+    regardless of what was appended to the source after the cut. Including title
+    in the hash means changing --title produces a NEW session file rather than
+    silently reusing the existing one with the old title.
+    """
+    h = hashlib.sha256()
+    with open(source, "rb") as f:
+        for i, raw in enumerate(f, 1):
+            if i > cut_at:
+                break
+            h.update(raw)
+    h.update(f":cut={cut_at}:title={title}".encode("utf-8"))
+    return str(_uuid.uuid5(_UUID_NAMESPACE, h.hexdigest()))
+
+
+def find_last_user_prompt_text(lines: list[Line], cut_at: int) -> str | None:
+    """Walk back from cut_at, return first user prompt text encountered."""
+    for ln in reversed(lines):
+        if ln.n > cut_at:
+            continue
+        if not is_user_prompt(ln.msg):
+            continue
+        text = extract_text(ln.msg)
+        if not text or _is_prompt_pollution(text):
+            continue
+        return text.replace("\n", " ").strip()
+    return None
+
+
+def find_last_ai_title(lines: list[Line], cut_at: int) -> str | None:
+    for ln in reversed(lines):
+        if ln.n > cut_at:
+            continue
+        if ln.msg.get("type") == "ai-title":
+            t = ln.msg.get("aiTitle", "")
+            if t:
+                return t
+    return None
+
+
+def smart_truncate(s: str, max_len: int) -> str:
+    """Truncate at the last word boundary that doesn't lose >40% of the budget."""
+    if len(s) <= max_len:
+        return s
+    cut = s[: max_len - 1]
+    last_space = cut.rfind(" ")
+    if last_space > max_len * 0.6:
+        return cut[:last_space] + "…"
+    return cut + "…"
+
+
+def auto_derive_title(lines: list[Line], cut_at: int) -> str:
+    """Best-effort fallback when --title isn't supplied.
+
+    NOTE: heuristic auto-titles are mediocre. ai-title is sticky (set once at
+    session start, doesn't evolve). Last user prompt usually lacks topic
+    context. The intelligent path is: the orchestrator (Claude in the
+    enclosing conversation) reads surrounding messages, synthesizes a
+    memorable label, and passes --title explicitly. The "[auto]" marker on
+    this fallback is intentional — it signals 'I didn't think; override me'."""
+    prompt = find_last_user_prompt_text(lines, cut_at)
+    prefix = "🔀 [auto] "
+    if prompt:
+        return f"{prefix}{smart_truncate(prompt, 100 - len(prefix))}"
+    topic = find_last_ai_title(lines, cut_at)
+    if topic:
+        return f"{prefix}{smart_truncate(topic, 100 - len(prefix))}"
+    return f"{prefix}branched at line {cut_at}"
+
+
+def cut_session(
+    source: Path,
+    project_dir: Path,
+    cut_at: int,
+    title: str | None,
+    dry_run: bool,
+) -> dict:
+    lines = load_lines(source)
+    by_n = {ln.n: ln for ln in lines}
+    if cut_at not in by_n:
+        raise BranchBackError(EXIT_USER_INPUT, f"ERR-104: line {cut_at} not in transcript (max line: {max(by_n) if by_n else 0})")
+    line_nums = sorted(by_n.keys())
+    cut_idx = line_nums.index(cut_at)
+    next_msg = by_n[line_nums[cut_idx + 1]].msg if cut_idx + 1 < len(line_nums) else None
+    if not is_clean_cut_boundary(by_n[cut_at].msg, next_msg):
+        # Find suggested clean cuts before cut_at.
+        suggestions = []
+        for i in range(cut_idx - 1, max(-1, cut_idx - 30), -1):
+            n = line_nums[i]
+            nxt = by_n[line_nums[i + 1]].msg if i + 1 < len(line_nums) else None
+            if is_clean_cut_boundary(by_n[n].msg, nxt):
+                suggestions.append(n)
+            if len(suggestions) >= 3:
+                break
+        sugg_block = "\n".join(f"  branch-back cut --at-line {n}" for n in suggestions) or f"  (no clean boundary in last 30 lines — run `inspect --target {cut_at} --window 50`)"
+        next_cls = classify(next_msg) if next_msg else "EOF"
+        raise BranchBackError(
+            EXIT_MID_TURN_REFUSE,
+            f"ERR-002: cut at line {cut_at} lands mid-turn — next message is {next_cls}, would corrupt the resumed session.\n\n"
+            f"Suggested clean cut points before line {cut_at}:\n{sugg_block}\n\n"
+            f"Or run inspect to see all clean boundaries:\n"
+            f"  branch-back inspect --target {cut_at}"
+        )
+
+    resolved_title = title or auto_derive_title(lines, cut_at)
+    new_uuid = derive_session_uuid(source, cut_at, resolved_title)
+    out_path = project_dir / f"{new_uuid}.jsonl"
+    idempotent_match = out_path.exists()
+
+    if dry_run:
+        return {
+            "source": str(source),
+            "cut_at": cut_at,
+            "kept_lines": cut_at,
+            "new_uuid": new_uuid,
+            "new_path": str(out_path),
+            "title": resolved_title,
+            "resume_command": f"claude --resume {new_uuid}",
+            "dry_run": True,
+            "idempotent_match": idempotent_match,
+        }
+
+    if idempotent_match:
+        return {
+            "source": str(source),
+            "cut_at": cut_at,
+            "kept_lines": cut_at,
+            "new_uuid": new_uuid,
+            "new_path": str(out_path),
+            "title": resolved_title,
+            "resume_command": f"claude --resume {new_uuid}",
+            "dry_run": False,
+            "idempotent_match": True,
+        }
+
+    # Atomic write: build to .tmp, fsync, rename. A Ctrl-C mid-write leaves
+    # the tmp file orphaned but the final session file is never half-baked.
+    tmp_path = out_path.with_suffix(".jsonl.tmp")
+    kept = 0
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for ln in lines:
+                if ln.n > cut_at:
+                    break
+                msg = dict(ln.msg)
+                if "sessionId" in msg:
+                    msg["sessionId"] = new_uuid
+                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+                kept += 1
+            # Inject ai-title so the session shows up named in `claude --resume` picker.
+            ai_title_record = {
+                "type": "ai-title",
+                "aiTitle": resolved_title,
+                "sessionId": new_uuid,
+            }
+            f.write(json.dumps(ai_title_record, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, out_path)
+    except BaseException:
+        # Clean up the tmp file on any failure, including KeyboardInterrupt.
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+    return {
+        "source": str(source),
+        "cut_at": cut_at,
+        "kept_lines": kept,
+        "new_uuid": new_uuid,
+        "new_path": str(out_path),
+        "title": resolved_title,
+        "resume_command": f"claude --resume {new_uuid}",
+        "dry_run": False,
+        "idempotent_match": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Doctor
+# ---------------------------------------------------------------------------
+
+def doctor_run(project_dir: Path, session_path: Path | None) -> dict:
+    checks: list[dict] = []
+
+    def add(name: str, ok: bool, details: str = "") -> None:
+        checks.append({"name": name, "status": "pass" if ok else "fail", "details": details})
+
+    add("PROJECTS_ROOT exists", PROJECTS_ROOT.exists(), str(PROJECTS_ROOT))
+    add("project_dir exists", project_dir.exists(), str(project_dir))
+    add("project_dir writable", os.access(project_dir, os.W_OK), str(project_dir))
+    jsonls = list(project_dir.glob("*.jsonl")) if project_dir.exists() else []
+    add(f"project has ≥1 jsonl session ({len(jsonls)} found)", bool(jsonls))
+
+    # `claude` binary discoverability.
+    import shutil
+    claude_path = shutil.which("claude") or shutil.which("claude.exe")
+    add("`claude` binary on PATH", bool(claude_path), claude_path or "(not found — `claude --resume` won't work)")
+
+    if session_path and session_path.exists():
+        try:
+            lines = load_lines(session_path)
+            add(f"session parses ({len(lines)} valid lines)", True)
+            ai_titles = [ln for ln in lines if ln.msg.get("type") == "ai-title"]
+            add(f"session has ai-title record ({len(ai_titles)} found)", bool(ai_titles))
+            # Orphan check: count parentUuids that don't resolve.
+            uuids_seen: set[str] = set()
+            orphans = 0
+            for ln in lines:
+                u = ln.msg.get("uuid")
+                if u:
+                    uuids_seen.add(u)
+            for ln in lines:
+                pu = ln.msg.get("parentUuid")
+                if pu and pu not in uuids_seen:
+                    orphans += 1
+            add(f"parentUuid chain integrity ({orphans} orphans)", orphans == 0)
+        except Exception as e:
+            add("session parses", False, f"{e!r}")
+
+    failed = [c for c in checks if c["status"] == "fail"]
+    return {
+        "project_dir": str(project_dir),
+        "session": str(session_path) if session_path else None,
+        "checks": checks,
+        "failures": len(failed),
+        "ok": not failed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Capabilities + robot-docs
+# ---------------------------------------------------------------------------
+
+def capabilities() -> dict:
+    return {
+        "name": "branch-back",
+        "version": VERSION,
+        "contract_version": CONTRACT_VERSION,
+        "subcommands": ["search", "inspect", "cut", "capabilities", "robot-docs", "doctor"],
+        "input_modes": ["line", "timestamp", "grep"],
+        "exit_codes": {
+            "0": "success",
+            "1": "user-input-error",
+            "2": "(reserved by argparse — invalid CLI args; never emitted by domain logic)",
+            "3": "tool-environment-error",
+            "4": "corruption-detected in source JSONL",
+            "5": "mid-turn-refuse — cut at this line would corrupt the resumed session",
+        },
+        "env_vars": {
+            "BRANCH_BACK_PROJECT_DIR": "Fallback project dir when --project not passed and cwd auto-detect fails (precedence: --project arg > env > cwd)",
+        },
+        "defaults": {
+            "project": "auto-detected from cwd",
+            "session": "most recent JSONL by mtime",
+            "title": "🔀 [auto] <last-user-prompt-truncated> — `[auto]` marks the lazy fallback; orchestrators should always pass --title with a synthesized label",
+            "uuid_derivation": "uuid5(NAMESPACE, sha256(kept_lines_1..cut_at) || cut_at || title) — RFC4122 v5; same source+line+title is idempotent across source growth",
+        },
+    }
+
+
+ROBOT_DOCS_GUIDE = """\
+# branch-back — agent handbook
+
+## What it does
+Forks a Claude Code session at any past message in the JSONL transcript.
+Built-in /branch only forks at the current cursor; this forks anywhere,
+including across multiple compactions.
+
+## Workflow (the canonical 4-step)
+
+```
+# 1. DISCOVER — fuzzy search for candidate user prompts
+branch-back search --grep "<term>" --robot-json
+  # narrow with --since/--until ISO timestamps if needed
+  # iterate with narrower terms until ~3 candidates
+
+# 2. INSPECT — verify clean cut boundaries near a target line
+branch-back inspect --target <line> --window 30 --robot-json
+  # look for "clean_cut": true rows; cut at the latest clean line ≤ target
+  # also use this to read context for title synthesis (step 3)
+
+# 3. SYNTHESIZE TITLE — read context, propose a memorable label
+  # NOT a CLI step — orchestrator's job. Read 30+ surrounding messages
+  # via inspect, find the topic anchor (project + bead/feature) and the
+  # branch moment (what was just decided). Pass via --title in step 4.
+
+# 4. CUT — execute the truncation
+branch-back cut --at-line <clean_line> --title "<synthesized>"
+  # prints `claude --resume <uuid>` for direct resume
+  # also lands in `claude --resume` picker with the title prefixed 🔀
+```
+
+## Auto-defaults (skip flags when sensible)
+- `--project`: cwd → slug auto-detect
+- `--session`: most recent JSONL by mtime in the project
+- `--title` (cut): `🔀 [auto] <last-user-prompt-truncated>` — the `[auto]` marker
+  is intentional shouting "lazy fallback, override me." Orchestrators (Claude in
+  the enclosing conversation) should always pass --title with a synthesized label.
+
+## Idempotency
+Re-running `cut --at-line N --title "X"` against the same source returns the
+same UUID with `idempotent_match: true`. Different --title produces a different
+UUID (each title is its own session file). Safe to re-run in retry loops.
+
+## Refusal contract
+`cut` refuses (exit 5) if the chosen line lands mid-turn (next message is a
+tool_result that would orphan without its preceding tool_use). The error
+prints up to 3 suggested clean lines further back. Pick one and re-run.
+Exit 2 is reserved by argparse (invalid CLI args), distinct from refusal.
+
+## Search-mode tips for narrowing
+- `--kind prompt` (default) searches user prompts only — fastest
+- `--kind both` includes assistant text — useful when you remember a phrase
+  Claude said but not what you said
+- `--since 2026-05-09T04:00Z --until 2026-05-09T07:00Z` for time windows
+- `--limit 10` to keep output tight when iterating
+
+## Exit codes
+0=ok, 1=user-input-error, 2=argparse-reserved, 3=env-error, 4=source-corruption, 5=mid-turn-refuse
+
+## Robot mode
+search / inspect / cut / doctor all support `--robot-json` for parseable
+output. `capabilities` is always JSON (the `--json` flag is symmetry-only;
+`--robot-json` is NOT accepted on capabilities).
+"""
+
+
+# ---------------------------------------------------------------------------
+# Output rendering
+# ---------------------------------------------------------------------------
+
+def print_json(obj, *, stream=None) -> None:
+    """Emit pretty JSON. Data → stdout; errors → stderr (per Axiom 4)."""
+    out = stream if stream is not None else sys.stdout
+    json.dump(obj, out, ensure_ascii=False, indent=2)
+    out.write("\n")
+    out.flush()
+
+
+def render_search_human(matches: list[dict], total: int, truncated: bool, limit: int) -> None:
+    if not matches:
+        print("(no matches)")
+        return
+    print(f"{'line':>6}  {'kind':<18}  timestamp                 preview")
+    print("-" * 100)
+    for m in matches:
+        ts = (m["timestamp"] or "")[:25]
+        print(f"{m['line']:>6}  {m['kind']:<18}  {ts:<25} {m['preview'][:60]}")
+    if truncated:
+        print(f"\nShowing most recent {len(matches)} of {total} match(es). Raise --limit to see more.")
+    else:
+        print(f"\n{len(matches)} match(es).")
+
+
+def render_inspect_human(result: dict) -> None:
+    print(f"Total lines: {result['total_lines']}.  Target: {result['target']}.")
+    print(f"{'line':>6}  {'CLEAN':>5}  {'classification':<24}  preview")
+    print("-" * 100)
+    for c in result["candidates"]:
+        clean = "YES" if c["clean_cut"] else ""
+        marker = " <-- target" if c["is_target"] else ""
+        print(f"{c['line']:>6}  {clean:>5}  {c['classification']:<24}  {c['preview'][:60]}{marker}")
+    print("\nCut at a CLEAN line at-or-before the target:")
+    print(f"  branch-back cut --at-line <N>")
+
+
+def render_cut_human(result: dict) -> None:
+    if result["idempotent_match"]:
+        print(f"Already exists (idempotent re-cut). UUID: {result['new_uuid']}")
+    elif result["dry_run"]:
+        print(f"DRY RUN — would write {result['kept_lines']} lines to:")
+        print(f"  {result['new_path']}")
+    else:
+        print(f"Wrote {result['kept_lines']} lines to:")
+        print(f"  {result['new_path']}")
+    print(f"\nTitle: {result['title']}")
+    print(f"\nResume the forked session with:\n  {result['resume_command']}")
+    print(f"\n…or run `claude --resume` (no UUID) and pick the session from the picker.")
+
+
+def render_doctor_human(result: dict) -> None:
+    print(f"project_dir: {result['project_dir']}")
+    if result["session"]:
+        print(f"session:     {result['session']}")
+    print()
+    for c in result["checks"]:
+        mark = "✓" if c["status"] == "pass" else "✗"
+        print(f"  {mark} {c['name']}")
+        if c.get("details"):
+            print(f"    {c['details']}")
+    print()
+    if result["ok"]:
+        print("OK — all checks pass")
+    else:
+        print(f"{result['failures']} check(s) failed")
+
+
+# ---------------------------------------------------------------------------
+# CLI dispatch
+# ---------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="branch-back",
+        description="Fork a Claude Code session at an arbitrary past message.",
+        epilog="Run `branch-back robot-docs guide` for the agent handbook.",
+    )
+    p.add_argument("--version", action="version", version=f"branch-back {VERSION}")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    common_session_args = [
+        ("--project", {"help": "project slug or path (default: cwd auto-detect)"}),
+        ("--session", {"help": "session UUID or path (default: most recent JSONL by mtime)"}),
+    ]
+
+    sp = sub.add_parser("search", help="fuzzy discovery — find candidate user prompts")
+    for flag, kw in common_session_args:
+        sp.add_argument(flag, **kw)
+    sp.add_argument("--grep", help="case-insensitive regex against message text")
+    sp.add_argument("--since", help="ISO timestamp lower bound (e.g., 2026-05-09T04:00Z)")
+    sp.add_argument("--until", help="ISO timestamp upper bound")
+    sp.add_argument("--kind", choices=["prompt", "assistant", "both"], default="prompt")
+    sp.add_argument("--limit", type=int, default=50)
+    sp.add_argument("--robot-json", action="store_true")
+
+    ip = sub.add_parser("inspect", help="show clean cut boundaries near a target line")
+    for flag, kw in common_session_args:
+        ip.add_argument(flag, **kw)
+    ip.add_argument("--target", type=int, required=True, help="target line to inspect around")
+    ip.add_argument("--window", type=int, default=20)
+    ip.add_argument("--robot-json", action="store_true")
+
+    cp = sub.add_parser("cut", help="execute the truncation; write new session JSONL")
+    for flag, kw in common_session_args:
+        cp.add_argument(flag, **kw)
+    cp.add_argument("--at-line", type=int, required=True)
+    cp.add_argument("--title", help="custom session title (default: auto-derived from context)")
+    cp.add_argument("--dry-run", action="store_true")
+    cp.add_argument("--robot-json", action="store_true")
+
+    cap = sub.add_parser("capabilities", help="print machine-readable contract")
+    cap.add_argument("--json", action="store_true", help="(always JSON; flag is for symmetry)")
+    cap.add_argument("--robot-json", action="store_true", help="alias of --json for robot-mode vocabulary consistency")
+
+    rd = sub.add_parser("robot-docs", help="paste-ready agent handbook")
+    rd.add_argument("topic", nargs="?", choices=["guide"], default="guide")
+
+    dp = sub.add_parser("doctor", help="self-diagnostics")
+    dp.add_argument("--project", help="project slug or path (default: cwd auto-detect)")
+    dp.add_argument("--session", help="session UUID or path (default: most recent)")
+    dp.add_argument("--robot-json", action="store_true")
+
+    return p
+
+
+def cmd_search(args) -> int:
+    project_dir = resolve_project_dir(args.project)
+    session = resolve_session(project_dir, args.session)
+    lines = load_lines(session)
+    try:
+        since = parse_iso(args.since) if args.since else None
+        until = parse_iso(args.until) if args.until else None
+    except ValueError as e:
+        raise BranchBackError(
+            EXIT_USER_INPUT,
+            f"ERR-105: timestamp not a valid ISO format: {e}\n\n"
+            f"Expected examples:\n  2026-05-09\n  2026-05-09T04:00Z\n  2026-05-09T04:00:00+00:00",
+        )
+    result = search_lines(lines, args.grep, since, until, args.kind, args.limit)
+    if args.robot_json:
+        print_json({
+            "source": str(session),
+            "matches": result["matches"],
+            "total_matched": result["total_matched"],
+            "truncated": result["truncated"],
+            "limit": args.limit,
+            "exit_code": EXIT_OK,
+        })
+    else:
+        render_search_human(result["matches"], result["total_matched"], result["truncated"], args.limit)
+    return EXIT_OK
+
+
+def cmd_inspect(args) -> int:
+    project_dir = resolve_project_dir(args.project)
+    session = resolve_session(project_dir, args.session)
+    lines = load_lines(session)
+    result = inspect_around(lines, args.target, args.window)
+    result["source"] = str(session)
+    if args.robot_json:
+        print_json(result)
+    else:
+        render_inspect_human(result)
+    return EXIT_OK
+
+
+def cmd_cut(args) -> int:
+    project_dir = resolve_project_dir(args.project)
+    session = resolve_session(project_dir, args.session)
+    result = cut_session(
+        source=session,
+        project_dir=project_dir,
+        cut_at=args.at_line,
+        title=args.title,
+        dry_run=args.dry_run,
+    )
+    if args.robot_json:
+        print_json(result)
+    else:
+        render_cut_human(result)
+    return EXIT_OK
+
+
+def cmd_capabilities(args) -> int:
+    print_json(capabilities())
+    return EXIT_OK
+
+
+def cmd_robot_docs(args) -> int:
+    print(ROBOT_DOCS_GUIDE)
+    return EXIT_OK
+
+
+def cmd_doctor(args) -> int:
+    # Doctor's job is to DIAGNOSE, including environment problems. Resolve
+    # both project and session inside try/except so even total failures land
+    # as failed checks rather than aborting the whole run. Explicit --session
+    # arg surfaces its own failure as a check; auto-detect tolerates absence.
+    project_dir: Path | None = None
+    session_path: Path | None = None
+    pre_checks: list[dict] = []
+    try:
+        project_dir = resolve_project_dir(args.project)
+    except BranchBackError as e:
+        pre_checks.append({"name": "project_dir resolves", "status": "fail", "details": e.message})
+    if project_dir is not None:
+        if args.session is not None:
+            try:
+                session_path = resolve_session(project_dir, args.session)
+            except BranchBackError as e:
+                pre_checks.append({"name": "session resolves", "status": "fail", "details": e.message})
+        else:
+            try:
+                session_path = resolve_session(project_dir, None)
+            except BranchBackError:
+                pass
+    result = doctor_run(project_dir, session_path) if project_dir is not None else {
+        "project_dir": None,
+        "session": None,
+        "checks": [],
+        "failures": 0,
+        "ok": True,
+    }
+    result["checks"] = pre_checks + result["checks"]
+    failed = [c for c in result["checks"] if c["status"] == "fail"]
+    result["failures"] = len(failed)
+    result["ok"] = not failed
+    if args.robot_json:
+        print_json(result)
+    else:
+        render_doctor_human(result)
+    return EXIT_OK if result["ok"] else EXIT_ENV
+
+
+DISPATCH = {
+    "search": cmd_search,
+    "inspect": cmd_inspect,
+    "cut": cmd_cut,
+    "capabilities": cmd_capabilities,
+    "robot-docs": cmd_robot_docs,
+    "doctor": cmd_doctor,
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return DISPATCH[args.cmd](args)
+    except BranchBackError as e:
+        if getattr(args, "robot_json", False):
+            print_json({"ok": False, "error": e.message, "exit_code": e.exit_code}, stream=sys.stderr)
+        else:
+            stderr(e.message)
+        return e.exit_code
+    except KeyboardInterrupt:
+        stderr("interrupted")
+        return EXIT_ENV
+
+
+if __name__ == "__main__":
+    sys.exit(main())

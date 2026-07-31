@@ -1,0 +1,160 @@
+# Types Template: {ComponentName}
+
+Copy this template and replace `{ComponentName}` with your actual component name.
+
+---
+
+```typescript
+// src/components/{ComponentName}/types.ts
+import type { HTMLAttributes, ReactNode } from 'react'
+
+/**
+ * Visual variant for {ComponentName}
+ */
+export type {ComponentName}Variant = 'default' | 'primary' | 'secondary'
+
+/**
+ * Size variant for {ComponentName}
+ */
+export type {ComponentName}Size = 'sm' | 'md' | 'lg'
+
+/**
+ * Props for the {ComponentName} component
+ */
+export interface {ComponentName}Props extends HTMLAttributes<HTMLDivElement> {
+  /**
+   * Visual variant
+   * @default 'default'
+   */
+  variant?: {ComponentName}Variant
+
+  /**
+   * Size variant
+   * @default 'md'
+   */
+  size?: {ComponentName}Size
+
+  /**
+   * Content to render inside the component
+   */
+  children?: ReactNode
+
+  /**
+   * Additional CSS class names
+   */
+  className?: string
+
+  /**
+   * Whether the component is disabled
+   * @default false
+   */
+  disabled?: boolean
+
+  /**
+   * Whether the component is in a loading state
+   * @default false
+   */
+  loading?: boolean
+}
+```
+
+---
+
+## Extending HTML Element Types
+
+### For div-based components
+```typescript
+import type { HTMLAttributes } from 'react'
+interface Props extends HTMLAttributes<HTMLDivElement> {}
+```
+
+### For button-based components
+```typescript
+import type { ButtonHTMLAttributes } from 'react'
+interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {}
+```
+
+### For input-based components
+```typescript
+import type { InputHTMLAttributes } from 'react'
+interface Props extends InputHTMLAttributes<HTMLInputElement> {}
+```
+
+### For anchor-based components
+```typescript
+import type { AnchorHTMLAttributes } from 'react'
+interface Props extends AnchorHTMLAttributes<HTMLAnchorElement> {}
+```
+
+### For form-based components
+```typescript
+import type { FormHTMLAttributes } from 'react'
+interface Props extends FormHTMLAttributes<HTMLFormElement> {}
+```
+
+---
+
+## Type Patterns
+
+### Discriminated Unions (for conditional props)
+```typescript
+// Component that's either a link OR a button
+type {ComponentName}Props =
+  | ({ as: 'link'; href: string } & AnchorHTMLAttributes<HTMLAnchorElement>)
+  | ({ as?: 'button' } & ButtonHTMLAttributes<HTMLButtonElement>)
+```
+
+### Required vs Optional Props
+```typescript
+interface Props {
+  // Required - component won't work without it
+  title: string
+
+  // Optional with default - has sensible fallback
+  variant?: 'default' | 'primary'  // @default 'default'
+
+  // Optional without default - truly optional
+  subtitle?: string
+}
+```
+
+### Callback Props
+```typescript
+interface Props {
+  /**
+   * Called when the component value changes
+   * @param value - The new value
+   */
+  onChange?: (value: string) => void
+
+  /**
+   * Called when the component is clicked
+   * @param event - The click event
+   */
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
+}
+```
+
+---
+
+## JSDoc Best Practices
+
+Always document:
+1. What the prop does
+2. Default value (if any)
+3. Example usage (for complex props)
+
+```typescript
+/**
+ * Configuration for tooltip behavior
+ *
+ * @example
+ * ```tsx
+ * <Component tooltip={{ content: 'Help text', placement: 'top' }} />
+ * ```
+ */
+tooltip?: {
+  content: string
+  placement?: 'top' | 'bottom' | 'left' | 'right'
+}
+```

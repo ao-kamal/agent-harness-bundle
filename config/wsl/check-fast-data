@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# check-fast-data: verify a project's hot dirs are ext4-backed (not regressed to 9p).
+# Catches the "npm replaced the symlink with a real 9p dir" footgun. Usage: check-fast-data [project_root]
+set -u
+root="${1:-$PWD}"; cd "$root" 2>/dev/null || { echo "no such dir: $root"; exit 2; }
+fail=0; echo "fast-data check: $root"
+check_dir() {
+  local d="$1"
+  [ -e "$d" ] || { return; }
+  if mountpoint -q "$d"; then
+    local fs; fs=$(df -T "$d" 2>/dev/null | tail -1 | awk '{print $2}')
+    if [ "$fs" = ext4 ]; then echo "  OK  $d: bind-mount on ext4"; else echo "  BAD $d: mounted but fs=$fs"; fail=1; fi
+  elif [ -L "$d" ]; then
+    local tgt; tgt=$(readlink -f "$d")
+    case "$tgt" in /root/*) echo "  OK  $d: symlink -> ext4 ($tgt)";; *) echo "  BAD $d: symlink -> $tgt (not ext4)"; fail=1;; esac
+  else
+    local fs; fs=$(df -T "$d" 2>/dev/null | tail -1 | awk '{print $2}')
+    if [ "$fs" = 9p ] || [ "$fs" = drvfs ]; then echo "  BAD $d: REAL DIR ON 9p (regressed - re-bind / init-fast-data)"; fail=1
+    else echo "  ?   $d: real dir on $fs"; fi
+  fi
+}
+for d in node_modules .astro dist .next target .beads; do check_dir "$d"; done
+[ "$fail" -eq 0 ] && echo "RESULT: all hot dirs ext4-backed (OK)" || echo "RESULT: REGRESSION DETECTED"
+exit $fail

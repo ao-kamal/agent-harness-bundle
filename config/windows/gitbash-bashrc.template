@@ -1,0 +1,23 @@
+# Obsidian CLI - must use .com (CLI shim), not .exe (Electron app)
+obsidian() { "/c/Program Files/Obsidian/Obsidian.com" "$@"; }
+
+# Claude Code with permission bypass
+# Note: caam run doesn't work on Windows (PTY operations not supported).
+# For manual failover when rate limited: claude-swap
+alias claude='claude --dangerously-skip-permissions'
+alias claude-swap='caam activate claude --auto'
+
+# Ensure scoop shims are on PATH (belt-and-suspenders if Windows User PATH loses them)
+case ":$PATH:" in
+  *":/c/Users/{{WIN_USER}}/scoop/shims:"*) ;;
+  *) export PATH="/c/Users/{{WIN_USER}}/scoop/shims:$PATH" ;;
+esac
+
+# Ensure npm globals are on PATH (defuddle, firecrawl, ctx7, etc. install here)
+case ":$PATH:" in
+  *":/c/Users/{{WIN_USER}}/AppData/Roaming/npm:"*) ;;
+  *) export PATH="$PATH:/c/Users/{{WIN_USER}}/AppData/Roaming/npm" ;;
+esac
+
+# Private tokens live in a separate untracked file
+[ -f ~/.env.private ] && source ~/.env.private

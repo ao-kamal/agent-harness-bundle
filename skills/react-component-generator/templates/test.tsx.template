@@ -1,0 +1,228 @@
+# Test Template: {ComponentName}
+
+Copy this template and replace `{ComponentName}` with your actual component name.
+
+---
+
+```tsx
+// src/components/{ComponentName}/{ComponentName}.test.tsx
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi } from 'vitest'
+import { {ComponentName} } from './{ComponentName}'
+
+describe('{ComponentName}', () => {
+  // ============================================
+  // Rendering Tests
+  // ============================================
+  describe('rendering', () => {
+    it('renders without crashing', () => {
+      render(<{ComponentName} />)
+    })
+
+    it('renders children correctly', () => {
+      render(<{ComponentName}>Test Content</{ComponentName}>)
+      expect(screen.getByText('Test Content')).toBeInTheDocument()
+    })
+
+    it('applies custom className', () => {
+      render(<{ComponentName} className="custom-class" data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveClass('custom-class')
+    })
+
+    it('spreads additional props to root element', () => {
+      render(<{ComponentName} data-testid="component" aria-label="Test" />)
+      expect(screen.getByTestId('component')).toHaveAttribute('aria-label', 'Test')
+    })
+  })
+
+  // ============================================
+  // Variant Tests
+  // ============================================
+  describe('variants', () => {
+    it('applies default variant by default', () => {
+      render(<{ComponentName} data-testid="component" />)
+      // Assert default variant classes
+      expect(screen.getByTestId('component')).toHaveClass('bg-background')
+    })
+
+    it('applies primary variant when specified', () => {
+      render(<{ComponentName} variant="primary" data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveClass('bg-primary')
+    })
+
+    it('applies secondary variant when specified', () => {
+      render(<{ComponentName} variant="secondary" data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveClass('bg-secondary')
+    })
+  })
+
+  // ============================================
+  // Size Tests
+  // ============================================
+  describe('sizes', () => {
+    it('applies medium size by default', () => {
+      render(<{ComponentName} data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveClass('h-10')
+    })
+
+    it('applies small size when specified', () => {
+      render(<{ComponentName} size="sm" data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveClass('h-8')
+    })
+
+    it('applies large size when specified', () => {
+      render(<{ComponentName} size="lg" data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveClass('h-12')
+    })
+  })
+
+  // ============================================
+  // Ref Forwarding Tests
+  // ============================================
+  describe('ref forwarding', () => {
+    it('forwards ref to root element', () => {
+      const ref = { current: null }
+      render(<{ComponentName} ref={ref} />)
+      expect(ref.current).toBeInstanceOf(HTMLElement)
+    })
+
+    it('ref provides access to DOM methods', () => {
+      const ref = { current: null as HTMLDivElement | null }
+      render(<{ComponentName} ref={ref} />)
+      expect(ref.current?.focus).toBeDefined()
+    })
+  })
+
+  // ============================================
+  // Interaction Tests
+  // ============================================
+  describe('interactions', () => {
+    it('handles click events', async () => {
+      const user = userEvent.setup()
+      const handleClick = vi.fn()
+
+      render(<{ComponentName} onClick={handleClick} data-testid="component" />)
+      await user.click(screen.getByTestId('component'))
+
+      expect(handleClick).toHaveBeenCalledTimes(1)
+    })
+
+    it('handles keyboard events', async () => {
+      const user = userEvent.setup()
+      const handleKeyDown = vi.fn()
+
+      render(<{ComponentName} onKeyDown={handleKeyDown} data-testid="component" />)
+      screen.getByTestId('component').focus()
+      await user.keyboard('{Enter}')
+
+      expect(handleKeyDown).toHaveBeenCalled()
+    })
+  })
+
+  // ============================================
+  // Accessibility Tests
+  // ============================================
+  describe('accessibility', () => {
+    it('has accessible role', () => {
+      render(<{ComponentName} role="button" />)
+      expect(screen.getByRole('button')).toBeInTheDocument()
+    })
+
+    it('supports aria-label', () => {
+      render(<{ComponentName} aria-label="Action button" data-testid="component" />)
+      expect(screen.getByTestId('component')).toHaveAttribute('aria-label', 'Action button')
+    })
+
+    it('supports aria-describedby', () => {
+      render(
+        <>
+          <{ComponentName} aria-describedby="description" data-testid="component" />
+          <span id="description">Help text</span>
+        </>
+      )
+      expect(screen.getByTestId('component')).toHaveAttribute('aria-describedby', 'description')
+    })
+  })
+
+  // ============================================
+  // State Tests (if component has state)
+  // ============================================
+  describe('state', () => {
+    it('handles disabled state', () => {
+      render(<{ComponentName} disabled data-testid="component" />)
+      // Adjust based on how your component handles disabled
+      expect(screen.getByTestId('component')).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('handles loading state', () => {
+      render(<{ComponentName} loading data-testid="component" />)
+      // Adjust based on how your component shows loading
+      expect(screen.getByTestId('component')).toHaveAttribute('aria-busy', 'true')
+    })
+  })
+})
+```
+
+---
+
+## Testing Patterns
+
+### Query Priority (use in this order)
+1. `getByRole` - Accessible queries (preferred)
+2. `getByLabelText` - Form elements
+3. `getByPlaceholderText` - Inputs
+4. `getByText` - Text content
+5. `getByTestId` - Last resort
+
+### User Event vs FireEvent
+```tsx
+// Prefer userEvent (simulates real user behavior)
+const user = userEvent.setup()
+await user.click(element)
+await user.type(input, 'text')
+
+// Use fireEvent only for events userEvent doesn't support
+fireEvent.scroll(element, { target: { scrollY: 100 } })
+```
+
+### Async Testing
+```tsx
+// Wait for element to appear
+await screen.findByText('Loaded content')
+
+// Wait for element to disappear
+await waitForElementToBeRemoved(() => screen.queryByText('Loading...'))
+
+// Wait for condition
+await waitFor(() => {
+  expect(mockFn).toHaveBeenCalled()
+})
+```
+
+### Mocking
+```tsx
+// Mock functions
+const handleClick = vi.fn()
+render(<Component onClick={handleClick} />)
+
+// Mock modules
+vi.mock('@/lib/api', () => ({
+  fetchData: vi.fn().mockResolvedValue({ data: 'test' })
+}))
+
+// Mock timers
+vi.useFakeTimers()
+vi.advanceTimersByTime(1000)
+vi.useRealTimers()
+```
+
+---
+
+## Test File Naming
+
+| Pattern | Example |
+|---------|---------|
+| Unit tests | `{ComponentName}.test.tsx` |
+| Integration tests | `{ComponentName}.integration.test.tsx` |
+| Visual tests | `{ComponentName}.visual.test.tsx` |
