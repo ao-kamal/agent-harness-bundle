@@ -1,0 +1,16 @@
+# Appended by install-grok.ps1. Existing keys in ~/.grok/config.toml win.
+# Secrets stay in ~/.env.private or ~/.config/kimi/key — never in this file.
+
+[skills]
+# Grok already scans ~/.grok/skills and ~/.agents/skills. This pin keeps
+# the bundle payload visible if someone later disables Claude compat.
+# paths is filled in by the installer with the real user home.
+
+[model.kimi-for-coding]
+model = "kimi-for-coding"
+name = "Kimi for coding"
+description = "Moonshot Kimi Code workhorse / fallback lane"
+base_url = "https://api.kimi.com/coding"
+api_backend = "messages"
+env_key = ["KIMI_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
+context_window = 262144
