@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|run_terminal_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\{{WIN_USER}}\\.claude\\hooks\\dcg-grok-bridge.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

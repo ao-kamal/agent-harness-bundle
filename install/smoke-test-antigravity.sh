@@ -22,7 +22,17 @@ test -d "$AGY/skills" && pass "antigravity-cli/skills exists" || fail "antigravi
 if [ -L "$AGY/skills" ] || cmd.exe /c "fsutil reparsepoint query %USERPROFILE%\\.gemini\\antigravity-cli\\skills" >/dev/null 2>&1; then
   pass "skills path is a junction/reparse (not a copy)"
 else
-  fail "skills path is a real directory — that is a second brain. Junction it."
+  fail "skills path is a real directory - that is a second brain. Junction it."
+fi
+
+if [ -d "$CLAUDE/rules" ]; then
+  if [ -L "$AGY/rules" ] || cmd.exe /c "fsutil reparsepoint query %USERPROFILE%\\.gemini\\antigravity-cli\\rules" >/dev/null 2>&1; then
+    pass "rules path is a junction/reparse (not a copy)"
+  else
+    fail "rules path is a real directory - that is a second brain. Junction it."
+  fi
+else
+  skip "rules junction (no ~/.claude/rules yet)"
 fi
 
 if command -v agy >/dev/null 2>&1; then

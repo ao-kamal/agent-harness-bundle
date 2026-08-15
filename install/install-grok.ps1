@@ -4,7 +4,11 @@
 #
 # Assumes install.ps1 already deployed ~/.claude (skills, rules, hooks, flywheel).
 # This script only: pin compat.claude, enable memory, junction Claude auto-memory,
-# register a compact hook that calls the shared PCR script.
+# register compact + dcg hooks that call shared scripts under ~/.claude/hooks.
+#
+# JSON is written from ASCII here-strings, not ConvertTo-Json.
+# Windows PowerShell 5.1 unwraps single-element arrays in ConvertTo-Json,
+# and UTF-8-no-BOM em dashes break the parser (gotcha 26). Keep this file ASCII.
 
 [CmdletBinding()]
 param(
@@ -14,6 +18,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:WinUser = $env:USERNAME
+$script:BundleRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $script:GrokHome = Join-Path $env:USERPROFILE '.grok'
 $script:ClaudeHome = Join-Path $env:USERPROFILE '.claude'
 $script:StateFile = Join-Path $env:USERPROFILE '.harness-bundle-grok-state.json'
@@ -21,6 +26,12 @@ $script:StateFile = Join-Path $env:USERPROFILE '.harness-bundle-grok-state.json'
 function Write-Info { param($m) if (-not $Quiet) { Write-Host "-> $m" -ForegroundColor Cyan } }
 function Write-Ok   { param($m) if (-not $Quiet) { Write-Host "OK $m" -ForegroundColor Green } }
 function Write-Warn2 { param($m) Write-Host "WARN $m" -ForegroundColor Yellow }
+
+function Write-Utf8NoBom {
+    param([string]$Path, [string]$Text)
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Text, $utf8)
+}
 
 function Get-State {
     if (Test-Path $script:StateFile) { return (Get-Content $script:StateFile -Raw | ConvertFrom-Json) }
@@ -94,17 +105,16 @@ if ($Update -or -not ($state.completed -contains 'memory-junction')) {
     }
     $pointer = Join-Path $script:GrokHome 'memory\MEMORY.md'
     if (-not (Test-Path $pointer)) {
-        $utf8 = New-Object System.Text.UTF8Encoding $false
         $text = @"
 # Memory Index
 
 Claude project memory is canonical. This file is a pointer, not a second store.
 
-Write durable memories to ``~/.claude/projects/<encoded-cwd>/memory/`` (or the junction ``from-claude/`` — same files). See ``~/.claude/rules/harness-shared.md``.
+Write durable memories to ``~/.claude/projects/<encoded-cwd>/memory/`` (or the junction ``from-claude/`` -- same files). See ``~/.claude/rules/harness-shared.md``.
 
 cass / ``cm`` remain the procedural and session-history layer.
 "@
-        [System.IO.File]::WriteAllText($pointer, $text, $utf8)
+        Write-Utf8NoBom $pointer $text
     }
     Complete-Stage $state 'memory-junction'
 }
@@ -116,18 +126,72 @@ if ($Update -or -not ($state.completed -contains 'compact-hook')) {
         Write-Warn2 ('shared PCR missing at ' + $pcr + ' - compact hook will still be written')
     }
     $pcrCmd = 'python "C:\Users\' + $script:WinUser + '\.claude\hooks\post-compact-reminder.py"'
-    $hookObj = @{
-        hooks = @{
-            PreCompact  = @(@{ hooks = @(@{ type = 'command'; command = $pcrCmd; timeout = 10 }) })
-            PostCompact = @(@{ hooks = @(@{ type = 'command'; command = $pcrCmd; timeout = 10 }) })
-        }
-    }
-    $hookJson = $hookObj | ConvertTo-Json -Depth 8
+    $hookJson = @"
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$pcrCmd",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$pcrCmd",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+"@
     $hookPath = Join-Path $script:GrokHome 'hooks\compact.json'
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($hookPath, $hookJson, $utf8)
+    Write-Utf8NoBom $hookPath $hookJson
     Write-Ok ('wrote ' + $hookPath + ' (UTF-8 no BOM) -> shared PCR')
     Complete-Stage $state 'compact-hook'
+}
+
+# --- dcg PreToolUse bridge (dcg 0.11 does not parse Grok toolInput; see dcg#319) ---
+if ($Update -or -not ($state.completed -contains 'dcg-hook')) {
+    $bridgeSrc = Join-Path $script:BundleRoot 'config\hooks\dcg-grok-bridge.py'
+    $bridgeDst = Join-Path $script:ClaudeHome 'hooks\dcg-grok-bridge.py'
+    if (Test-Path $bridgeSrc) {
+        Copy-Item $bridgeSrc $bridgeDst -Force
+    } elseif (-not (Test-Path $bridgeDst)) {
+        Write-Warn2 ('dcg-grok-bridge.py missing at ' + $bridgeSrc)
+    }
+    $dcgCmd = 'python "C:\Users\' + $script:WinUser + '\.claude\hooks\dcg-grok-bridge.py"'
+    $dcgJson = @"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|run_terminal_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$dcgCmd",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+"@
+    $dcgPath = Join-Path $script:GrokHome 'hooks\dcg.json'
+    Write-Utf8NoBom $dcgPath $dcgJson
+    Write-Ok ('wrote ' + $dcgPath + ' -> shared dcg-grok-bridge.py')
+    Complete-Stage $state 'dcg-hook'
 }
 
 Write-Ok 'Grok adapter done. Run: grok inspect   and   bash install/smoke-test-grok.sh'

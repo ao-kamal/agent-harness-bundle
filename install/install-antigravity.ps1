@@ -43,8 +43,14 @@ function Get-AgyExe {
 }
 
 function Set-Junction {
-    param([string]$Link, [string]$Target)
-    if (-not (Test-Path $Target)) { throw "shared brain missing at $Target" }
+    param([string]$Link, [string]$Target, [switch]$Optional)
+    if (-not (Test-Path $Target)) {
+        if ($Optional) {
+            Write-Warn2 "skip junction $Link - target missing: $Target"
+            return
+        }
+        throw "shared brain missing at $Target"
+    }
     if (Test-Path $Link) {
         $item = Get-Item $Link -Force
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
@@ -75,7 +81,8 @@ New-Item -ItemType Directory -Force $script:AgyHome | Out-Null
 if ($Update -or -not ($state.completed -contains 'junctions')) {
     Write-Info "junction Antigravity skill/rule dirs onto ~/.claude (no copy)"
     Set-Junction -Link (Join-Path $script:AgyHome 'skills') -Target (Join-Path $script:ClaudeHome 'skills')
-    Set-Junction -Link (Join-Path $script:AgyHome 'rules') -Target (Join-Path $script:ClaudeHome 'rules')
+    Set-Junction -Link (Join-Path $script:AgyHome 'rules') -Target (Join-Path $script:ClaudeHome 'rules') -Optional
+    Set-Junction -Link (Join-Path $script:AgyHome 'agents') -Target (Join-Path $script:ClaudeHome 'agents') -Optional
     Complete-Stage $state 'junctions'
 }
 

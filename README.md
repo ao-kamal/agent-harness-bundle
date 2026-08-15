@@ -10,7 +10,7 @@ The brain is shared. The CLI you sit in is a front end. Edit `~/.claude/` once; 
 - **Front ends that consume it**: Claude Code natively; Grok Build via `compat.claude`; Antigravity CLI (`agy`) via junctions onto `~/.claude` (not a second copy).
 - **The flywheel CLI stack** (Jeffrey Emanuel's ecosystem): session search (cass), procedural memory (cm), bead task graphs (br + bv), multi-agent tmux orchestration (ntm), agent coordination (Agent Mail), account switching (caam), command guards (dcg + slb), and more.
 - **A Windows + WSL hybrid architecture** that actually works: shared credentials, hot/cold filesystem discipline, self-healing symlinks, boot-time daemons.
-- **The Kimi lane** and a **Grok-sub lane** for ntm worker panes (Claude Code CLI pointed at those providers). ntm has no native Grok Build pane type yet.
+- **The Kimi lane** and a **Grok-sub lane** for ntm worker panes (Claude Code CLI pointed at those providers). ntm 1.20+ can `spawn --grok=N` (launch only); send/interrupt are still fail-closed (ntm#251).
 - **A field guide** that teaches the mental models, because copying config files does not transfer judgment.
 
 ## Quick start
@@ -28,7 +28,7 @@ That deploys the shared brain to `~/.claude` and the flywheel. Then, if the dail
 powershell -ExecutionPolicy Bypass -File install\install-grok.ps1
 ```
 
-That is a **thin adapter**. It does not copy skills or rules. It enables Grok memory, junctions Claude auto-memory so Grok can read and write it, pins `compat.claude` on, and registers a compact hook that calls the shared PCR script.
+That is a **thin adapter**. It does not copy skills or rules. It enables Grok memory, junctions Claude auto-memory so Grok can read and write it, pins `compat.claude` on, and registers compact + dcg hooks that call shared scripts under `~/.claude/hooks`.
 
 If the daily driver is Antigravity CLI (`agy`):
 

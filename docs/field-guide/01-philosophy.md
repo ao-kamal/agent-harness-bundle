@@ -10,6 +10,7 @@ The chapters in this field guide build on each other:
 4. **Meta-learnings** — fifteen specific, transferable lessons, each earned the hard way.
 5. **Vault hygiene** — how to keep your own notes clean once you start writing things down.
 6. **Grok as a front end** — how Grok Build reads and writes the same `~/.claude` brain. Skip only if you will never run `grok`.
+7. **Antigravity as a front end** — how `agy` reads the same brain via junctions. Skip if you will never run `agy`.
 
 Read them in order once. After that, they're reference — come back to whichever one is relevant.
 

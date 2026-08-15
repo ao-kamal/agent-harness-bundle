@@ -9,13 +9,13 @@ One brain. Any front end. Edit here, not in a per-CLI copy.
 | Global rules | `~/.claude/CLAUDE.md` | Claude Code, Grok Build (`compat.claude`) |
 | Topic rules | `~/.claude/rules/*.md` | both |
 | Skills | `~/.claude/skills/` | both |
-| Hooks (dcg, shared PCR) | `~/.claude/settings.json` + `~/.claude/hooks/` | both; Grok also has a thin compact hook |
+| Hooks (dcg, shared PCR) | `~/.claude/settings.json` + `~/.claude/hooks/` | Claude uses settings.json dcg; Grok uses `~/.grok/hooks/dcg.json` -> `dcg-grok-bridge.py` (dcg#319) plus compact.json |
 | Auto-memory | `~/.claude/projects/<encoded-cwd>/memory/` | both (Grok via junction + this rule) |
 | Procedural / session memory | `cm` / `cass` | any harness (CLI) |
 | Grok-only knobs | `~/.grok/config.toml` | Grok Build only |
 | Antigravity-only knobs | `~/.gemini/antigravity-cli/settings.json` | `agy` only. Skills/rules are junctions onto this table, not copies |
 
-Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/` or `~/.agents/`. Grok already scans `~/.claude/`. A second tree means every edit has to be made twice.
+Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/`, `~/.agents/`, or `~/.gemini/`. Grok already scans `~/.claude/`. Antigravity gets junctions, not copies. A second tree means every edit has to be made twice.
 
 Grok-native leftovers that stay Grok-only: `~/.grok/config.toml`, pager, auth, bundled skills. Claude-native leftovers that stay Claude-only: plugin marketplaces, TUI settings.
 
