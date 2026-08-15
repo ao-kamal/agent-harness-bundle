@@ -113,42 +113,22 @@ cass / ``cm`` remain the procedural and session-history layer.
 if ($Update -or -not ($state.completed -contains 'compact-hook')) {
     $pcr = Join-Path $script:ClaudeHome 'hooks\post-compact-reminder.py'
     if (-not (Test-Path $pcr)) {
-        Write-Warn2 "shared PCR missing at $pcr — compact hook will still be written"
+        Write-Warn2 ('shared PCR missing at ' + $pcr + ' - compact hook will still be written')
     }
-    $hookJson = @"
-{
-  "hooks": {
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\$($script:WinUser)\\.claude\\hooks\\post-compact-reminder.py\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\$($script:WinUser)\\.claude\\hooks\\post-compact-reminder.py\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-"@
+    $pcrCmd = 'python "C:\Users\' + $script:WinUser + '\.claude\hooks\post-compact-reminder.py"'
+    $hookObj = @{
+        hooks = @{
+            PreCompact  = @(@{ hooks = @(@{ type = 'command'; command = $pcrCmd; timeout = 10 }) })
+            PostCompact = @(@{ hooks = @(@{ type = 'command'; command = $pcrCmd; timeout = 10 }) })
+        }
+    }
+    $hookJson = $hookObj | ConvertTo-Json -Depth 8
     $hookPath = Join-Path $script:GrokHome 'hooks\compact.json'
     $utf8 = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($hookPath, $hookJson, $utf8)
-    Write-Ok "wrote $hookPath (UTF-8 no BOM) -> shared PCR"
+    Write-Ok ('wrote ' + $hookPath + ' (UTF-8 no BOM) -> shared PCR')
     Complete-Stage $state 'compact-hook'
 }
 
-Write-Ok "Grok adapter done. Run: grok inspect   and   bash install/smoke-test-grok.sh"
-Write-Info "Do not copy skills or rules into ~/.grok. Edit ~/.claude."
+Write-Ok 'Grok adapter done. Run: grok inspect   and   bash install/smoke-test-grok.sh'
+Write-Info 'Do not copy skills or rules into ~/.grok. Edit ~/.claude.'

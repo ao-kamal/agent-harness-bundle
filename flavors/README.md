@@ -6,6 +6,7 @@ This bundle is one working environment. The flywheel and the brain (`~/.claude`)
 |-----------|----------------------|---------------|
 | **Claude Code** | Native. `install\install.ps1` deploys here. | None |
 | **Grok Build** | Built-in `compat.claude` (skills, rules, hooks, MCP, CLAUDE.md). | Thin adapter: `install\install-grok.ps1` |
+| **Antigravity CLI** (`agy`) | No compat flag. Junctions `~/.gemini/antigravity-cli/{skills,rules}` onto `~/.claude`. | Thin adapter: `install\install-antigravity.ps1` |
 
 You can run both on one machine. You edit rules and skills in `~/.claude/` once.
 
