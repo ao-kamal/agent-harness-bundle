@@ -13,8 +13,9 @@ One brain. Any front end. Edit here, not in a per-CLI copy.
 | Auto-memory | `~/.claude/projects/<encoded-cwd>/memory/` | both (Grok via junction + this rule) |
 | Procedural / session memory | `cm` / `cass` | any harness (CLI) |
 | Grok-only knobs | `~/.grok/config.toml` | Grok Build only |
+| Antigravity-only knobs | `~/.gemini/antigravity-cli/settings.json` | `agy` only. Skills/rules are junctions onto this table, not copies |
 
-Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/` or `~/.agents/`. Grok already scans `~/.claude/`. A second tree means every edit has to be made twice.
+Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/`, `~/.agents/`, or `~/.gemini/`. Grok already scans `~/.claude/`. Antigravity gets junctions, not copies. A second tree means every edit has to be made twice.
 
 Grok-native leftovers that stay Grok-only: `~/.grok/config.toml`, pager, auth, bundled skills. Claude-native leftovers that stay Claude-only: plugin marketplaces, TUI settings.
 
@@ -49,7 +50,7 @@ When saving a memory:
 
 ## Daily driver vs swarms
 
-- **Daily work:** whichever CLI you sit in. Grok Build reads this same tree.
+- **Daily work:** whichever CLI you sit in. Grok Build reads this tree via `compat.claude`. Antigravity (`agy`) reads it via the skill/rule junctions from `install\install-antigravity.ps1`.
 - **Swarms:** ntm 1.20+ can `spawn --grok=N` (phase 1: launch/count/detect). `send` / interrupt / restart are still fail-closed (ntm#251). Until that lands, automated dispatch still uses Claude Code panes on the Grok sub (`--cc=N:grok-4.6`). See `ntm-swarm.md`.
 
 ## Inspect
