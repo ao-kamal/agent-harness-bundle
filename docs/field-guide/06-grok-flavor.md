@@ -53,6 +53,17 @@ Claude flavor: a Terminal profile exports Anthropic-compatible env vars and you 
 
 Grok flavor: `/model kimi-for-coding`. The model block talks to `https://api.kimi.com/coding` with `api_backend = "messages"`. Key file is still `~/.config/kimi/key`.
 
+## Flywheel on the Grok flavor
+
+The Grok installer installs the same flywheel binaries as the Claude flavor. It does **not** send you to `install.ps1`. Differences from the Claude installer, all learned on the first Grok deploy:
+
+- Scoop `main` must be a git repo. A zip fallback leaves `fatal: not a git repository`. Fix: `gh repo clone ScoopInstaller/Main ~/scoop/buckets/main -- --depth 1`.
+- The dicklesworthstone bucket lists 0 manifests unless `*.json` is copied into `bucket/`.
+- `scoop install dicklesworthstone/cm` fails a hash check (published exe moved). Grok flavor downloads `cass-memory-windows-x64.exe` with `gh release download`.
+- `br` must be `br-*-windows_amd64.exe`. A loose `*windows*` match can install a file named `.exe` that is not a PE; the installer refuses it.
+- Hook JSON must be UTF-8 **without BOM** or Grok reports `Hooks (0)`.
+- The dcg hook path is `~/.local/bin/dcg.exe`. After scoop install, the installer copies `scoop\apps\dcg\current\dcg.exe` there.
+
 ## Honest limit: ntm has no Grok pane type
 
 As of this flavor, `ntm spawn` understands `--cc`, `--cod`, `--gmi`, and Kimi-as-cc-variant. There is no `--grok=N`. The operator sits in Grok; worker panes stay Claude/Codex/Gemini/Kimi until ntm grows a Grok agent. Project `AGENTS.md` is the shared contract across those pane types.

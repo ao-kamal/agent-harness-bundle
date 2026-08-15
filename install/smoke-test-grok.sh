@@ -64,25 +64,25 @@ else
   skip "grok inspect" "no grok.exe"
 fi
 
-hdr "PHASE 4 — Flywheel CLIs (optional on Grok-only machines)"
-for spec in \
-  "dcg:$WINHOME/scoop/shims/dcg.exe|$WINHOME/.local/bin/dcg.exe" \
-  "cass:$WINHOME/.local/bin/cass.exe" \
-  "br:$WINHOME/.local/bin/br.exe" \
-  "bv:$WINHOME/scoop/shims/bv.exe" \
-  "cm:$WINHOME/scoop/shims/cm.exe"
-do
-  name="${spec%%:*}"
-  rest="${spec#*:}"
-  found=0
-  IFS='|' read -r -a paths <<< "$rest"
-  for p in "${paths[@]}"; do
-    if test -f "$p"; then found=1; break; fi
-  done
-  if [ "$found" -eq 1 ]; then pass "Win: $name on disk"
-  else skip "Win: $name on disk" "flywheel tool not installed yet"
-  fi
-done
+hdr "PHASE 4 — Flywheel CLIs"
+assert_win_pe() {
+  local path="$1" name="$2"
+  if [ ! -f "$path" ]; then fail "Win: $name on disk" "not found at $path"; return; fi
+  # MZ header — rejects a Linux br/cm that was renamed .exe
+  python -c "import sys; b=open(sys.argv[1],'rb').read(2); sys.exit(0 if b==b'MZ' else 1)" "$path" \
+    && pass "Win: $name is a Windows PE" \
+    || fail "Win: $name is a Windows PE" "file exists but is not a PE (wrong release asset)"
+}
+assert_win_pe "$WINHOME/.local/bin/dcg.exe" "dcg.exe"
+assert_win_pe "$WINHOME/.local/bin/cass.exe" "cass.exe"
+assert_win_pe "$WINHOME/.local/bin/br.exe" "br.exe"
+assert_win_pe "$WINHOME/.local/bin/cm.exe" "cm.exe"
+if test -f "$WINHOME/scoop/shims/bv.exe"; then pass "Win: bv on disk"
+else fail "Win: bv on disk" "scoop shim missing"; fi
+if test -f "$WINHOME/scoop/shims/caam.exe"; then pass "Win: caam on disk"
+else fail "Win: caam on disk" "scoop shim missing"; fi
+if test -f "$WINHOME/scoop/shims/slb.exe"; then pass "Win: slb on disk"
+else fail "Win: slb on disk" "scoop shim missing"; fi
 
 hdr "PHASE 5 — Agent Mail (optional)"
 HEALTH=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/health 2>&1)

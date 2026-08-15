@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File install\install-grok.ps1
 
 11 stages, same shape as `install.ps1`, Grok-targeted:
 
-- **0–2** package managers + flywheel CLIs (skipped if already done by the Claude installer)
+- **0–2** package managers + flywheel CLIs. This is a real install, not a pointer at the Claude installer. Scoop buckets are cloned with `gh` (git mid-pack clones die on this host). `cm` / `cass` / `br` come from exact GitHub release assets with an MZ-header check — the Claude-flavor scoop `cm` hash is stale, and a `*windows*` glob can grab a non-PE file.
 - **3** `grok login` (manual browser moment) — not Claude login
 - **3b** notes Grok bundled document skills (docx/pdf/pptx). Does not run `claude plugin`
 - **4** deploys skills, `AGENTS.md`, rules, hooks, and the `deep-researcher` agent to `~/.grok`

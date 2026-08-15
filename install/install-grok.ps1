@@ -60,6 +60,83 @@ function Get-GrokExe {
     return $null
 }
 
+function Update-SessionPath {
+    $localBin = Join-Path $env:USERPROFILE '.local\bin'
+    $shims = Join-Path $env:USERPROFILE 'scoop\shims'
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + $shims + ';' + $localBin
+}
+
+function Test-PeExe {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $false }
+    $fs = [System.IO.File]::OpenRead($Path)
+    try {
+        $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte()
+        return ($b0 -eq 0x4D -and $b1 -eq 0x5A)
+    } finally { $fs.Close() }
+}
+
+function Ensure-Scoop {
+    Update-SessionPath
+    if (Get-Command scoop -ErrorAction SilentlyContinue) { return }
+    Write-Info "Installing scoop"
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+    Invoke-RestMethod get.scoop.sh | Invoke-Expression
+    Update-SessionPath
+    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) { throw "scoop install finished but scoop is not on PATH" }
+}
+
+function Ensure-ScoopBucket {
+    param([string]$Name, [string]$Repo)
+    $dir = Join-Path $env:USERPROFILE "scoop\buckets\$Name"
+    if (Test-Path (Join-Path $dir '.git')) { return }
+    Write-Info "scoop bucket $Name via gh clone $Repo (git protocol often dies mid-pack on this host)"
+    if (Test-Path $dir) {
+        scoop bucket rm $Name 2>$null
+        if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+    }
+    git config --global http.postBuffer 524288000 | Out-Null
+    git config --global http.version HTTP/1.1 | Out-Null
+    gh repo clone $Repo $dir -- --depth 1
+    if ($Name -eq 'dicklesworthstone') {
+        $bucketDir = Join-Path $dir 'bucket'
+        New-Item -ItemType Directory -Force $bucketDir | Out-Null
+        Copy-Item (Join-Path $dir '*.json') $bucketDir -Force
+    }
+}
+
+function Install-GhWindowsBinary {
+    param([string]$Repo, [string]$Pattern, [string]$DestName)
+    $localBin = Join-Path $env:USERPROFILE '.local\bin'
+    New-Item -ItemType Directory -Force $localBin | Out-Null
+    $dest = Join-Path $localBin $DestName
+    if ((Test-Path $dest) -and (Test-PeExe $dest)) {
+        $probe = & $dest --version 2>&1
+        if ($LASTEXITCODE -eq 0 -or "$probe" -match '\d+\.\d+') {
+            Write-Ok "$DestName already a valid Win64 PE at $dest"
+            return
+        }
+        Write-Warn2 "$DestName has an MZ header but will not run (likely a truncated download). Replacing."
+        Remove-Item $dest -Force
+    }
+    $dir = Join-Path $env:TEMP ("hb-gh-" + $DestName)
+    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    Write-Info "$DestName from $Repo ($Pattern)"
+    gh release download --repo $Repo --pattern $Pattern --dir $dir --clobber
+    $zip = Get-ChildItem $dir -File -Filter '*.zip' | Select-Object -First 1
+    if ($zip) { Expand-Archive $zip.FullName -DestinationPath (Join-Path $dir 'x') -Force }
+    $exe = Get-ChildItem $dir -Recurse -File -Filter '*.exe' |
+        Where-Object { $_.Name -notmatch 'install' } |
+        Sort-Object Length -Descending |
+        Select-Object -First 1
+    if (-not $exe) { throw "no .exe in $Repo release matching $Pattern" }
+    Copy-Item $exe.FullName $dest -Force
+    Unblock-File $dest
+    if (-not (Test-PeExe $dest)) { throw "$DestName is not a Windows PE executable (wrong asset). Delete $dest and retry." }
+    Write-Ok "$DestName -> $dest"
+}
+
 function Invoke-GitBash {
     param([string]$ScriptPath, [string]$BashArgs = '')
     $candidates = @(
@@ -115,18 +192,60 @@ if (-not (Test-StageDone $state 'preflight')) {
     Complete-Stage $state 'preflight'
 }
 
-# =================== Stages 1-2: Flywheel (optional / already done) ===================
+# =================== Stages 1-2: Flywheel (Grok-native, no Claude login) ===================
+# Claude install.ps1 uses scoop + remote install.ps1/install.sh. On this host
+# git clones die mid-pack and the dicklesworthstone cm scoop hash is stale.
+# Grok flavor: scoop buckets via `gh repo clone`, Windows PE via `gh release
+# download` with exact asset names, MZ-header check before we keep a binary.
 if ($SkipFlywheel) {
     Write-Warn2 "Stages 1-2 skipped by flag"
-} elseif ((Test-StageDone $state 'cli-tools') -or (Test-ClaudeStage 'cli-tools')) {
-    Write-Ok "Stages 1-2 already done (Grok or Claude installer state)"
-    if (-not (Test-StageDone $state 'cli-tools')) { Complete-Stage $state 'cli-tools' }
+} elseif ((Test-StageDone $state 'cli-tools') -and (Get-Command dcg -ErrorAction SilentlyContinue) -and (Get-Command cass -ErrorAction SilentlyContinue)) {
+    Write-Ok "Stages 1-2 already done"
 } else {
-    Write-Info "Stages 1-2: flywheel CLIs not installed yet"
-    Write-Warn2 "This Grok installer deploys Grok config now. For cass/cm/br/bv/dcg/ntm/WSL, either:"
-    Write-Host "  - re-run later after those tools are on PATH, or"
-    Write-Host "  - run the shared Claude installer stages 0-2 only if you also want that flavor"
-    Write-Host "  Grok hooks that call dcg.exe fail-open until dcg exists."
+    Write-Info "Stage 1-2: flywheel CLIs (scoop + gh releases)"
+    Ensure-Scoop
+    Ensure-ScoopBucket -Name 'main' -Repo 'ScoopInstaller/Main'
+    Ensure-ScoopBucket -Name 'extras' -Repo 'ScoopInstaller/Extras'
+    Ensure-ScoopBucket -Name 'dicklesworthstone' -Repo 'Dicklesworthstone/scoop-bucket'
+    Update-SessionPath
+
+    foreach ($pkg in @('jq', '7zip')) {
+        if (-not (Get-Command ($pkg -replace '7zip','7z') -ErrorAction SilentlyContinue)) {
+            scoop install $pkg
+        }
+    }
+    $py = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $py -or $py.Source -match 'WindowsApps') { scoop install python }
+
+    foreach ($pkg in @('bv', 'caam', 'dcg', 'slb')) {
+        if (-not (Get-Command $pkg -ErrorAction SilentlyContinue)) {
+            scoop install "dicklesworthstone/$pkg"
+        }
+    }
+    # cm scoop hash is stale (published exe no longer matches the bucket).
+    # cass/br official Windows installers exist; we take the release artifacts
+    # so we never pipe a remote script.
+    Install-GhWindowsBinary -Repo 'Dicklesworthstone/coding_agent_session_search' -Pattern 'cass-windows-amd64.zip' -DestName 'cass.exe'
+    Install-GhWindowsBinary -Repo 'Dicklesworthstone/beads_rust' -Pattern 'br-*-windows_amd64.exe' -DestName 'br.exe'
+    Install-GhWindowsBinary -Repo 'Dicklesworthstone/cass_memory_system' -Pattern 'cass-memory-windows-x64.exe' -DestName 'cm.exe'
+    try { Install-GhWindowsBinary -Repo 'Dicklesworthstone/meta_skill' -Pattern 'ms-*-windows-x86_64.exe' -DestName 'ms.exe' } catch { Write-Warn2 "ms optional: $_" }
+    try { Install-GhWindowsBinary -Repo 'Dicklesworthstone/franken_markdown' -Pattern 'fmd-*-x86_64-pc-windows-msvc.exe' -DestName 'fmd.exe' } catch { Write-Warn2 "fmd optional: $_" }
+    try { scoop install ffmpeg } catch { Write-Warn2 "ffmpeg optional: $_" }
+
+    $localBin = Join-Path $env:USERPROFILE '.local\bin'
+    New-Item -ItemType Directory -Force $localBin | Out-Null
+    # Hooks call ~/.local/bin/dcg.exe. Scoop leaves it in shims/apps.
+    $dcgApp = Join-Path $env:USERPROFILE 'scoop\apps\dcg\current\dcg.exe'
+    if (Test-Path $dcgApp) { Copy-Item $dcgApp (Join-Path $localBin 'dcg.exe') -Force }
+    Copy-Item (Join-Path $script:BundleRoot 'payload\bin\branch-back') (Join-Path $localBin 'branch-back') -Force
+    Copy-Item (Join-Path $script:BundleRoot 'payload\bin\branch-back.cmd') (Join-Path $localBin 'branch-back.cmd') -Force
+    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    if ($userPath -notlike "*$localBin*") {
+        [Environment]::SetEnvironmentVariable('PATH', "$userPath;$localBin", 'User')
+        Write-Ok "added $localBin to User PATH (new shells only)"
+    }
+    Update-SessionPath
+    Complete-Stage $state 'cli-tools'
 }
 
 # =================== Stage 3: Grok login ===================
@@ -222,26 +341,64 @@ context_window = 262144
     Complete-Stage $state 'config-deploy'
 }
 
-# =================== Stage 5: WSL (shared) ===================
+# =================== Stage 5: WSL (same script as Claude flavor; no Claude login) ===================
 if ($SkipWSL) {
     Write-Warn2 "Stage 5 skipped by flag"
 } elseif ((Test-StageDone $state 'wsl') -or (Test-ClaudeStage 'wsl')) {
     Write-Ok "Stage 5 WSL already done"
     if (-not (Test-StageDone $state 'wsl')) { Complete-Stage $state 'wsl' }
 } else {
-    Write-Info "Stage 5: WSL not marked complete"
-    Write-Warn2 "Grok flavor uses the same WSL stage as the Claude flavor (ntm, Agent Mail, flywheel)."
-    Write-Host "  To install it: powershell -ExecutionPolicy Bypass -File install\install.ps1"
-    Write-Host "  (Claude login is a separate later stage; stop after WSL if you only want the shared side.)"
-    Write-Host "  Or re-run this installer after WSL is up; Agent Mail MCP will then register."
+    Write-Info "Stage 5: WSL + Ubuntu + shared flywheel (ntm, Agent Mail)"
+    $wslReady = $false
+    try { wsl -l -v 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $wslReady = $true } } catch {}
+    if (-not $wslReady) {
+        Write-Warn2 "WSL not ready. Enable it with: wsl --install -d Ubuntu"
+        Write-Host "  Then re-run this installer. Grok config already deployed; this stage resumes."
+    } else {
+        # wsl.exe lists names as UTF-16. PowerShell then sees U\0b\0u\0n\0t\0u\0
+        # and -match 'Ubuntu' fails even when Ubuntu is installed.
+        $distros = ((wsl -l -q) | ForEach-Object { ($_ -replace "`0",'').Trim() }) -join ' '
+        Write-Info "WSL distros: $distros"
+        if ($distros -notmatch 'Ubuntu') {
+            Write-Warn2 "Ubuntu distro not listed. Install it (wsl --install -d Ubuntu) and re-run."
+        } else {
+            $wslCfgSrc = Get-Content (Join-Path $script:BundleRoot 'config\wsl\wslconfig.template') -Raw
+            $totalGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 0)
+            $mem = [math]::Min(8, [math]::Max(4, [math]::Floor($totalGB / 2)))
+            $swap = [math]::Max(2, [math]::Floor($mem / 2))
+            $wslCfg = $wslCfgSrc -replace '\{\{WSL_MEMORY\}\}', "${mem}GB" -replace '\{\{WSL_SWAP\}\}', "${swap}GB"
+            $utf8 = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText((Join-Path $env:USERPROFILE '.wslconfig'), $wslCfg, $utf8)
+
+            $bundleWslPath = '/mnt/c' + ($script:BundleRoot.Substring(2) -replace '\\','/')
+            # Quote BUNDLE_ROOT: this repo often lives under a path with spaces.
+            $envText = "WIN_USER=$script:WinUser`nBUNDLE_ROOT=`"$bundleWslPath`"`nKIMI_ENABLED=1`n"
+            $utf8 = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText((Join-Path $script:BundleRoot 'install\wsl-setup.env'), $envText, $utf8)
+
+            Write-Info "Running WSL stage (long)"
+            wsl -d Ubuntu -u root -- bash ($bundleWslPath + '/install/wsl-setup.sh')
+            if ($LASTEXITCODE -eq 10) { Write-Warn2 "Some WSL tools failed - re-run later to retry them; continuing" }
+            elseif ($LASTEXITCODE -ne 0) { Write-Err2 "WSL stage failed (exit $LASTEXITCODE). Fix and re-run."; exit 1 }
+
+            Write-Info "Restarting WSL so the boot hook fires"
+            wsl --shutdown
+            Start-Sleep -Seconds 3
+            wsl -d Ubuntu -u root -- bash -lc 'true'
+            Start-Sleep -Seconds 12
+            $health = & curl.exe -s --max-time 8 http://127.0.0.1:8765/health
+            if ("$health" -match '"status"\s*:\s*"ready"') { Write-Ok "Agent Mail healthy at 127.0.0.1:8765" }
+            else { Write-Warn2 "Agent Mail not reachable yet at 127.0.0.1:8765. NEVER probe localhost." }
+            Complete-Stage $state 'wsl'
+        }
+    }
 }
 
 # =================== Stage 7: MCP ===================
-if (-not (Test-StageDone $state 'mcp')) {
-    Write-Info "Stage 7: Grok MCP registrations"
-    powershell -ExecutionPolicy Bypass -File (Join-Path $script:BundleRoot 'install\mcp-register-grok.ps1')
-    Complete-Stage $state 'mcp'
-}
+# Always re-run: Agent Mail is registered only after the WSL stage mints the token.
+Write-Info "Stage 7: Grok MCP registrations"
+powershell -ExecutionPolicy Bypass -File (Join-Path $script:BundleRoot 'install\mcp-register-grok.ps1')
+if (-not (Test-StageDone $state 'mcp')) { Complete-Stage $state 'mcp' }
 
 # =================== Stage 8: Daemons (if VBS present) ===================
 if (-not (Test-StageDone $state 'daemons')) {
