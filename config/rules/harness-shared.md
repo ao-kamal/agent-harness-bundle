@@ -50,7 +50,7 @@ When saving a memory:
 ## Daily driver vs swarms
 
 - **Daily work:** whichever CLI you sit in. Grok Build reads this same tree.
-- **Swarms:** ntm still launches Claude Code panes. Route Grok-sub panes with `--cc=N:grok-4.6` (see `ntm-swarm.md`). Do not invent a second spawn path until ntm ships a native Grok type.
+- **Swarms:** ntm 1.20+ can `spawn --grok=N` (phase 1: launch/count/detect). `send` / interrupt / restart are still fail-closed (ntm#251). Until that lands, automated dispatch still uses Claude Code panes on the Grok sub (`--cc=N:grok-4.6`). See `ntm-swarm.md`.
 
 ## Inspect
 
