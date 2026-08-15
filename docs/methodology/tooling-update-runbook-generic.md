@@ -20,7 +20,7 @@ How to update the CLI toolchain this bundle installs (NOT skills — `jsm`/`ms` 
 | 6 | **Windows cass** | Stop the `Cass Watch Daemon` task + kill `cass.exe` → `install.ps1 -EasyMode -Verify` → restart the task |
 | 7 | **Windows `.local\bin`** | Release zips via BITS + GitHub `.sha256` verify: br, dcg; cm copied from the scoop install |
 | 8 | **Agent Mail** | Release zip/tar via BITS + sha256 verify. Windows: swap the exes. WSL: swap the binaries, restart the server process |
-| 9 | **npm globals (targeted)** | Per-package `npm install -g <pkg>@latest` — ctx7, firecrawl-cli, defuddle, dev-browser, `@playwright/mcp`, `@apify/actors-mcp-server` |
+| 9 | **npm globals (targeted)** | Per-package `npm install -g <pkg>@latest` — ctx7, firecrawl-cli, defuddle, `@playwright/mcp`, `@apify/actors-mcp-server`. **Not** `dev-browser` (see gotcha: pinned 0.2.8-ergo). |
 | 10 | **Smoke test** | `bash install/smoke-test.sh` (this bundle's own validator) |
 
 ## Tool → repo → update mechanism map
@@ -38,7 +38,8 @@ How to update the CLI toolchain this bundle installs (NOT skills — `jsm`/`ms` 
 | am / mcp-agent-mail | mcp_agent_mail_rust | release zip → `.local/bin` (2 exes) | release tar.gz → `/root/.local/bin` (2 bins); `am update` exists but can hang on a slow connection — see gotcha 11 |
 | jsm | (jeffreys-skills.md) | — | `jsm update` |
 | ms | (scoop dicklesworthstone bucket) | scoop | — |
-| ctx7, firecrawl-cli, defuddle, dev-browser, `@playwright/mcp`, `@apify/actors-mcp-server` | — | npm -g | — |
+| ctx7, firecrawl-cli, defuddle, `@playwright/mcp`, `@apify/actors-mcp-server` | — | npm -g | — |
+| dev-browser | `ao-kamal/dev-browser` fork (`0.2.8-ergo`) | overwrite `...\npm\node_modules\dev-browser\bin\dev-browser-windows-x64.exe` from `payload/bin/` then `dev-browser --version` must contain `ergo`. **Never** `npm install -g dev-browser@latest` | — |
 
 ## Gotchas (each one cost real time — do not rediscover)
 
@@ -69,3 +70,4 @@ How to update the CLI toolchain this bundle installs (NOT skills — `jsm`/`ms` 
 22. **A scoop hash mismatch can be a genuinely wrong manifest, not a corrupt download.** If clearing the cache and retrying reproduces the identical "wrong" hash every time, compare GitHub's own published `<asset>.sha256` against the manifest's `hash` field directly — if the manifest itself disagrees with GitHub, hand-correct the local manifest file and retry. Note that a subsequent bucket update can silently revert your local fix; re-apply if the mismatch recurs, and consider filing the discrepancy upstream.
 23. **A Windows PreToolUse safety hook can intermittently exceed its own evaluation time budget** independent of what the command actually contains — this has shown up on both multi-line PowerShell blocks and bare single-line executable invocations, plausibly from antivirus scanning a freshly-written binary inside the hook's execution window. Confirm it's a timeout artifact (not a real rule match) by testing the exact command directly against the tool's own test/explain command and confirming it evaluates as allowed. Remedy: split multi-line PowerShell into single-purpose calls, or run the command through a different shell. Don't just retry the same call repeatedly.
 24. **A tool can have no `--version` flag at all**, requiring a `version` subcommand instead on both platforms — `--version` erroring out with a full help dump is a distinct failure from "tool is broken," and worth checking before you assume something regressed.
+25. **Never `npm install -g dev-browser@latest`.** This bundle pins Kamal's `0.2.8-ergo` fork (`payload/bin/dev-browser-windows-x64.exe`). Stock SawyerHood 0.2.9 has no `--version` / `capabilities` / `doctor` / scoped `stop --browser`, and its Windows daemon does not detach from an agent Job Object. After any install, `dev-browser --version` must contain `ergo`. The installer overwrites the npm package exe and refuses to finish if that check fails.

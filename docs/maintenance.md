@@ -31,6 +31,8 @@ The reasoning is the same one behind most of chapter 03 in the field guide: this
 
 The CLI tools this bundle installs (cass, cm, br, bv, caam, dcg, ubs, ntm, Agent Mail, and the smaller npm-installed ones) have their own release cadence, independent of this bundle's own updates. Follow `docs/methodology/tooling-update-runbook-generic.md` for the update routine, the tool-to-repo map, and the gotcha list — it's written from real update runs across this exact Windows + WSL combination, and most of the entries in it are traps that cost real time the first time they were hit. Don't skip the audit-first step it describes; it's what tells you whether anything actually needs updating before you touch anything.
 
+`dev-browser` is the exception: do not treat it as an npm `@latest` package. This repo vendors `0.2.8-ergo` under `payload/bin/`. `npm install -g dev-browser@latest` is how stock SawyerHood 0.2.9 replaced that binary on 2026-07-31. After any update, `dev-browser --version` must contain `ergo`.
+
 ## Updating skills
 
 Most of the skills this bundle installs are file copies — plain markdown living under `~/.claude/skills/` only. Grok reads that directory. The default way they update is `git pull` plus `install.ps1 -Update`, which re-copies the skills payload from this repo into that one place.

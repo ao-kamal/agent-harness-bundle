@@ -209,8 +209,24 @@ if (-not (Test-StageDone $state 'cli-tools')) {
     Copy-Item (Join-Path $script:BundleRoot 'payload\bin\branch-back.cmd') (Join-Path $localBin 'branch-back.cmd') -Force
 
     # npm globals + pip
-    foreach ($npmPkg in @('ctx7', 'defuddle', 'dev-browser', 'firecrawl-cli')) { npm install -g $npmPkg --silent }
+    # NEVER `npm install -g dev-browser@latest`. SawyerHood 0.2.9 overwrote our
+    # pinned 0.2.8-ergo Windows exe on 2026-07-31 (harness-bundle Track A).
+    foreach ($npmPkg in @('ctx7', 'defuddle', 'firecrawl-cli')) { npm install -g $npmPkg --silent }
     pip install --quiet yt-dlp uv firecrawl-py
+
+    $dbSrc = Join-Path $script:BundleRoot 'payload\bin\dev-browser-windows-x64.exe'
+    $dbPkg = Join-Path $env:APPDATA 'npm\node_modules\dev-browser'
+    $dbDst = Join-Path $dbPkg 'bin\dev-browser-windows-x64.exe'
+    if (-not (Test-Path $dbSrc)) { throw "missing pinned dev-browser exe: $dbSrc" }
+    if (-not (Test-Path $dbPkg)) { npm install -g dev-browser --silent }
+    $dbBin = Join-Path $dbPkg 'bin'
+    if (-not (Test-Path $dbBin)) { New-Item -ItemType Directory -Path $dbBin -Force | Out-Null }
+    Copy-Item $dbSrc $dbDst -Force
+    Unblock-File $dbDst
+    $dbVer = & dev-browser --version 2>&1 | Out-String
+    if ($dbVer -notmatch '0\.2\.8-ergo') {
+        throw "dev-browser is not the pinned ergo build (got: $dbVer). Do not leave a stock npm binary in place."
+    }
 
     # Ensure ~\.local\bin on User PATH
     $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
