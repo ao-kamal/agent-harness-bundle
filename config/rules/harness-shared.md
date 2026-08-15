@@ -9,7 +9,7 @@ One brain. Any front end. Edit here, not in a per-CLI copy.
 | Global rules | `~/.claude/CLAUDE.md` | Claude Code, Grok Build (`compat.claude`) |
 | Topic rules | `~/.claude/rules/*.md` | both |
 | Skills | `~/.claude/skills/` | both |
-| Hooks (dcg, shared PCR) | `~/.claude/settings.json` + `~/.claude/hooks/` | both; Grok also has a thin compact hook |
+| Hooks (dcg, shared PCR) | `~/.claude/settings.json` + `~/.claude/hooks/` | Claude uses settings.json dcg; Grok uses `~/.grok/hooks/dcg.json` -> `dcg-grok-bridge.py` (dcg#319) plus compact.json |
 | Auto-memory | `~/.claude/projects/<encoded-cwd>/memory/` | both (Grok via junction + this rule) |
 | Procedural / session memory | `cm` / `cass` | any harness (CLI) |
 | Grok-only knobs | `~/.grok/config.toml` | Grok Build only |

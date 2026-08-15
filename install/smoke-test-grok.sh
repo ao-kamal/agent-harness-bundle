@@ -52,6 +52,8 @@ fi
 
 hdr "PHASE 3 — Thin adapter"
 test -f "$GROK_HOME/hooks/compact.json" && pass "compact.json present" || fail "compact.json present"
+test -f "$GROK_HOME/hooks/dcg.json" && pass "dcg.json present" || fail "dcg.json present"
+test -f "$CLAUDE_HOME/hooks/dcg-grok-bridge.py" && pass "dcg-grok-bridge.py present" || fail "dcg-grok-bridge.py present"
 if test -d "$GROK_HOME/memory/from-claude"; then
   pass "memory junction directory exists"
   if test -f "$GROK_HOME/memory/from-claude/C--Users-$WINUSER/memory/MEMORY.md" \

@@ -150,5 +150,39 @@ if ($Update -or -not ($state.completed -contains 'compact-hook')) {
     Complete-Stage $state 'compact-hook'
 }
 
+# --- dcg PreToolUse bridge (dcg 0.11 does not parse Grok toolInput; see dcg#319) ---
+if ($Update -or -not ($state.completed -contains 'dcg-hook')) {
+    $bridgeSrc = Join-Path $script:BundleRoot 'config\hooks\dcg-grok-bridge.py'
+    $bridgeDst = Join-Path $script:ClaudeHome 'hooks\dcg-grok-bridge.py'
+    if (Test-Path $bridgeSrc) {
+        Copy-Item $bridgeSrc $bridgeDst -Force
+    } elseif (-not (Test-Path $bridgeDst)) {
+        Write-Warn2 "dcg-grok-bridge.py missing at $bridgeSrc"
+    }
+    $dcgJson = @"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|run_terminal_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\$($script:WinUser)\\.claude\\hooks\\dcg-grok-bridge.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+"@
+    $dcgPath = Join-Path $script:GrokHome 'hooks\dcg.json'
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($dcgPath, $dcgJson, $utf8)
+    Write-Ok "wrote $dcgPath -> shared dcg-grok-bridge.py"
+    Complete-Stage $state 'dcg-hook'
+}
+
 Write-Ok "Grok adapter done. Run: grok inspect   and   bash install/smoke-test-grok.sh"
 Write-Info "Do not copy skills or rules into ~/.grok. Edit ~/.claude."
