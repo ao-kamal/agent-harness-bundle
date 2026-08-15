@@ -3,6 +3,7 @@ planning/
 
 # Safety net: no secret-bearing files, ever
 *.env
+install/wsl-setup.env
 **/config.env
 **/*.key
 **/secrets*

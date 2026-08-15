@@ -2,13 +2,14 @@
 
 This bundle gives you a lot of tools. Before any of them matter, you need the thinking that makes them worth having. That's what this chapter is. Read it before you install anything, and come back to it once things are running — it'll make more sense the second time.
 
-The five chapters in this field guide build on each other:
+The chapters in this field guide build on each other:
 
 1. **Philosophy** (this one) — why any of this is worth the trouble.
 2. **The planning loop** — how a plan actually gets built and turned into work, in detail.
 3. **Windows + WSL** — the mental model for the hybrid setup this bundle installs.
 4. **Meta-learnings** — fifteen specific, transferable lessons, each earned the hard way.
 5. **Vault hygiene** — how to keep your own notes clean once you start writing things down.
+6. **Grok flavor** — what changes when the agent CLI is Grok instead of Claude Code. Skip if you are on the Claude flavor.
 
 Read them in order once. After that, they're reference — come back to whichever one is relevant.
 
