@@ -19,9 +19,13 @@ git pull
 powershell -ExecutionPolicy Bypass -File install\install.ps1 -Update
 # Grok flavor
 powershell -ExecutionPolicy Bypass -File install\install-grok.ps1 -Update
+# Codex flavor
+powershell -ExecutionPolicy Bypass -File install\install-codex.ps1 -Update
+# Antigravity flavor
+powershell -ExecutionPolicy Bypass -File install\install-antigravity.ps1 -Update
 ```
 
-The `-Update` flag is what makes updates land: it re-copies the skills payload and re-renders the config templates for that flavor while leaving every completed install untouched. Claude state lives in `%USERPROFILE%\.harness-bundle-state.json`. Grok state lives in `%USERPROFILE%\.harness-bundle-grok-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
+The `-Update` flag is what makes updates land: it re-copies the skills payload and re-renders the config templates for that flavor while leaving every completed install untouched. Claude state lives in `%USERPROFILE%\.harness-bundle-state.json`. Grok: `.harness-bundle-grok-state.json`. Codex: `.harness-bundle-codex-state.json`. Antigravity: `.harness-bundle-antigravity-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
 
 ## Re-run the smoke test after ANY infrastructure change
 
@@ -35,7 +39,7 @@ The CLI tools this bundle installs (cass, cm, br, bv, caam, dcg, ubs, ntm, Agent
 
 ## Updating skills
 
-Most of the skills this bundle installs are file copies — plain markdown living under `~/.claude/skills/` (Claude flavor) and `~/.grok/skills/` plus `~/.agents/skills/` (Grok flavor). The default way they update is the same as everything else in the bundle: `git pull` plus a re-run of the matching installer, which re-copies the skills payload from this repo.
+Most of the skills this bundle installs are file copies — plain markdown living under `~/.claude/skills/` (Claude), `~/.grok/skills/` (Grok), `~/.codex/skills/` (Codex), `~/.gemini/antigravity-cli/skills/` (Antigravity), plus `~/.agents/skills/` (shared scan path). The default way they update is the same as everything else in the bundle: `git pull` plus a re-run of the matching installer, which re-copies the skills payload from this repo.
 
 There's a second, optional path: a subscription to Jeffrey's Skills.md (the marketplace these skills originate from) lets the `jsm` CLI sync new and updated skills directly from that marketplace, independent of this bundle's own release schedule. This bundle does **not** assume you have that subscription, and doesn't require it — without it, skills update purely through this repo, on whatever cadence Kamal pushes updates. If you decide later that you want faster, direct-from-source skill updates, `jsm sync --status` (no subscription needed just to check) shows you what's available, and `jsm sync --force` pulls it if you do subscribe. Treat this as a nice-to-have upgrade path, not something you're missing out on by skipping it.
 

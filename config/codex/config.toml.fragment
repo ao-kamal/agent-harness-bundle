@@ -1,0 +1,8 @@
+# Appended by install-codex.ps1. Existing keys in ~/.codex/config.toml win.
+# Secrets stay in ~/.env.private — never in this file.
+
+[features]
+hooks = true
+
+# ntm already launches Codex as --cod with
+# --dangerously-bypass-approvals-and-sandbox. Do not invent a second agent type.

@@ -1,0 +1,50 @@
+{
+  "description": "Harness bundle lifecycle hooks for Codex CLI.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\{{WIN_USER}}\\.codex\\hooks\\trauma_guard.py\"",
+            "commandWindows": "python \"C:\\Users\\{{WIN_USER}}\\.codex\\hooks\\trauma_guard.py\"",
+            "timeout": 10,
+            "statusMessage": "trauma guard"
+          },
+          {
+            "type": "command",
+            "command": "C:\\Users\\{{WIN_USER}}\\.local\\bin\\dcg.exe",
+            "commandWindows": "C:\\Users\\{{WIN_USER}}\\.local\\bin\\dcg.exe",
+            "timeout": 10,
+            "statusMessage": "dcg"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\{{WIN_USER}}\\.codex\\hooks\\post-compact-reminder.py\"",
+            "commandWindows": "python \"C:\\Users\\{{WIN_USER}}\\.codex\\hooks\\post-compact-reminder.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\{{WIN_USER}}\\.codex\\hooks\\post-compact-reminder.py\"",
+            "commandWindows": "python \"C:\\Users\\{{WIN_USER}}\\.codex\\hooks\\post-compact-reminder.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

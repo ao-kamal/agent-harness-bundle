@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "mcp-youtube": {
+      "command": "npx",
+      "args": ["-y", "@anaisbetts/mcp-youtube"]
+    },
+    "apify": {
+      "serverUrl": "https://mcp.apify.com"
+    }
+  }
+}

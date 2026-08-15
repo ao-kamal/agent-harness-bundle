@@ -1,0 +1,3 @@
+{
+  "comment": "Created by install-antigravity.ps1 if no settings.json existed. Existing files are left alone. Set tool permission to always-proceed via /config. Unattended swarm panes use agy --dangerously-skip-permissions (official)."
+}

@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          {
+            "name": "trauma_guard",
+            "type": "command",
+            "command": "python \"C:\\Users\\{{WIN_USER}}\\.gemini\\antigravity-cli\\plugins\\harness-bundle\\trauma_guard.py\"",
+            "timeout": 5000
+          },
+          {
+            "name": "dcg",
+            "type": "command",
+            "command": "C:\\Users\\{{WIN_USER}}\\.local\\bin\\dcg.exe",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
