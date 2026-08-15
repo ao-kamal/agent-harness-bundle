@@ -152,3 +152,5 @@ This rule applies anywhere you hit a "thing isn't installed" error. Don't rebuil
 ## Secrets in Shell Configs
 
 **Tokens never live directly in `.bashrc`/`.profile`.** Private tokens go in `~/.env.private` (Windows Git Bash) and `/root/.env.private` (WSL, chmod 600), sourced from the shell configs. This keeps shell configs shareable/template-able without a scrub pass. New secrets follow the same pattern: add the `export` line to the `.env.private` file, never to the rc files themselves.
+
+**Client credentials go one layer deeper: the Bitwarden vault** (`bw` CLI — full operational contract in rules/tools-reference.md). `.env.private` holds only working-session exports (BW_SESSION, deliberate per-tool tokens); the durable store for logins, cPanels, registrars, and API keys is the vault, item-per-credential.
