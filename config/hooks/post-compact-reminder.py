@@ -1,9 +1,10 @@
-"""Post-Compact Reminder - Windows port of Dicklesworthstone's post_compact_reminder.
+"""Post-compact reminder for Claude Code and Grok Build.
 
-SessionStart hook (matcher: "compact"). Reads the hook JSON from stdin; if the
-session start was caused by context compaction, prints a reminder that Claude
-Code injects into the fresh context. Plain ASCII by design (Windows console
-codepages). Upstream bash original: github.com/Dicklesworthstone/post_compact_reminder
+One script, two hook envelopes. Deployed to ~/.claude/hooks/.
+Grok's thin compact hook calls this same file. Do not copy it into ~/.grok/hooks/.
+
+Claude: SessionStart matcher "compact" — stdout is injected.
+Grok: PreCompact / PostCompact — emit additionalContext JSON.
 """
 import codecs
 import json
@@ -14,7 +15,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 BOM = codecs.BOM_UTF8.decode("utf-8")
 
 MESSAGE = """IMPORTANT: Context was just compacted. STOP. You MUST:
-1. Re-read the global CLAUDE.md and the project CLAUDE.md (and AGENTS.md if the project has one) NOW
+1. Re-read the global CLAUDE.md (and the project CLAUDE.md / AGENTS.md if present) NOW
 2. Confirm by briefly stating the key rules/conventions and the current task state you found
 
 Do not proceed with any task until you have re-read them and confirmed what you learned."""
@@ -26,8 +27,29 @@ def main() -> int:
         payload = json.loads(raw.lstrip(BOM))
     except (json.JSONDecodeError, ValueError):
         return 0
-    if payload.get("source") != "compact":
+    if not isinstance(payload, dict):
         return 0
+
+    event = str(
+        payload.get("hookEventName") or payload.get("hook_event_name") or ""
+    ).lower().replace("-", "_")
+    source = str(payload.get("source") or payload.get("trigger") or "").lower()
+
+    grok_compact = event in ("pre_compact", "post_compact")
+    claude_compact = source == "compact"
+    if not grok_compact and not claude_compact:
+        return 0
+
+    if grok_compact:
+        hook_name = "PostCompact" if "post" in event else "PreCompact"
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": hook_name,
+                "additionalContext": MESSAGE,
+            }
+        }))
+        return 0
+
     print()
     print(MESSAGE)
     print()

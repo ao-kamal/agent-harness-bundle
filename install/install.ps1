@@ -1,4 +1,4 @@
-# claude-harness-bundle installer (Windows orchestrator)
+# agent-harness-bundle installer (Windows orchestrator)
 #
 # FIRST LAUNCH (Windows blocks unsigned local scripts by default):
 #   1. Open PowerShell in the cloned bundle folder

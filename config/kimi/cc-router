@@ -1,23 +1,66 @@
 #!/usr/bin/env bash
-# ntm cc-router: a Kimi-aware shim for the [agents].claude launch template.
-# If the pane's --model starts with "kimi", route to the Kimi Code subscription
-# endpoint; otherwise launch normal Claude (subscription/OAuth left untouched).
+# ntm cc-router: shim for the [agents].claude launch template.
+# Routes by the pane's --model:
+#   grok*     -> SuperGrok via CLIProxyAPI on 127.0.0.1:8317
+#   kimi*     -> Kimi Code subscription, kimi-for-coding, 256k
+#   k3-256k*  -> Kimi k3-256k
+#   k3*       -> Kimi k3[1m]
+#   otherwise -> normal Claude (subscription/OAuth left untouched)
 model=""; prev=""
 for a in "$@"; do [ "$prev" = "--model" ] && model="$a"; prev="$a"; done
 case "$model" in
-  kimi*)
+  grok*)
+    TOKEN_FILE="/mnt/c/Users/{{WIN_USER}}/.config/xai/proxy-token"
+    export ANTHROPIC_BASE_URL="http://127.0.0.1:8317"
+    export ANTHROPIC_AUTH_TOKEN="$(tr -d ' \r\n' < "$TOKEN_FILE")"
+    unset ANTHROPIC_API_KEY
+    export ANTHROPIC_API_KEY=""
+    export ANTHROPIC_MODEL="grok-4.6"
+    export ANTHROPIC_DEFAULT_OPUS_MODEL="grok-4.6"
+    export ANTHROPIC_DEFAULT_SONNET_MODEL="grok-4.6"
+    export ANTHROPIC_DEFAULT_HAIKU_MODEL="grok-4.6"
+    export ANTHROPIC_DEFAULT_FABLE_MODEL="grok-4.6"
+    export ANTHROPIC_SMALL_FAST_MODEL="grok-4.6"
+    export CLAUDE_CODE_SUBAGENT_MODEL="grok-4.6"
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000
+    export CLAUDE_CODE_MAX_CONTEXT_TOKENS=500000
+    export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
+    export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
+    export CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
+    export CLAUDE_CONFIG_DIR="/mnt/c/Users/{{WIN_USER}}/.config/xai/claude"
+    ;;
+  kimi*|k3*)
     export ANTHROPIC_BASE_URL="https://api.kimi.com/coding/"
     export ANTHROPIC_AUTH_TOKEN="$(cat /mnt/c/Users/{{WIN_USER}}/.config/kimi/key)"
     unset ANTHROPIC_API_KEY
-    export ANTHROPIC_DEFAULT_OPUS_MODEL="kimi-for-coding"
-    export ANTHROPIC_DEFAULT_SONNET_MODEL="kimi-for-coding"
-    export ANTHROPIC_DEFAULT_HAIKU_MODEL="kimi-for-coding"
     export ANTHROPIC_SMALL_FAST_MODEL="kimi-for-coding"
     export CLAUDE_CODE_SUBAGENT_MODEL="kimi-for-coding"
-    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=262144
+    unset CLAUDE_CONFIG_DIR
+    case "$model" in
+      k3-256k*)
+        export ANTHROPIC_DEFAULT_OPUS_MODEL="k3-256k"
+        export ANTHROPIC_DEFAULT_SONNET_MODEL="k3-256k"
+        export ANTHROPIC_DEFAULT_HAIKU_MODEL="kimi-for-coding"
+        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=262144
+        export CLAUDE_CODE_MAX_CONTEXT_TOKENS=262144
+        ;;
+      k3*)
+        export ANTHROPIC_DEFAULT_OPUS_MODEL="k3[1m]"
+        export ANTHROPIC_DEFAULT_SONNET_MODEL="k3[1m]"
+        export ANTHROPIC_DEFAULT_HAIKU_MODEL="kimi-for-coding"
+        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=1048576
+        export CLAUDE_CODE_MAX_CONTEXT_TOKENS=1048576
+        ;;
+      *)
+        export ANTHROPIC_DEFAULT_OPUS_MODEL="kimi-for-coding"
+        export ANTHROPIC_DEFAULT_SONNET_MODEL="kimi-for-coding"
+        export ANTHROPIC_DEFAULT_HAIKU_MODEL="kimi-for-coding"
+        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=262144
+        ;;
+    esac
     ;;
   *)
-    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_SMALL_FAST_MODEL CLAUDE_CODE_SUBAGENT_MODEL
+    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_FABLE_MODEL ANTHROPIC_SMALL_FAST_MODEL CLAUDE_CODE_SUBAGENT_MODEL ANTHROPIC_MODEL CLAUDE_CONFIG_DIR CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING
     ;;
 esac
 exec /usr/local/bin/claude "$@"

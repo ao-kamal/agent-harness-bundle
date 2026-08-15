@@ -1,12 +1,14 @@
-# Harness flavors
+# Front ends, not flavors
 
-This bundle is one working environment with more than one coding-agent front end. The flywheel (skills, rules, beads, ntm, cass, dcg, Agent Mail, WSL) is shared. The agent CLI you sit in is a flavor.
+This bundle is one working environment. The flywheel and the brain (`~/.claude`) are shared. The agent CLI you sit in is a front end that **reads** that tree. It is not a second copy of the tree.
 
-| Flavor | Installer | Setup | Deploys to |
-|--------|-----------|-------|------------|
-| **Claude Code** (original) | `install\install.ps1` | [SETUP.md](../SETUP.md) | `~/.claude` |
-| **Grok** (this addition) | `install\install-grok.ps1` | [flavors/grok/SETUP.md](grok/SETUP.md) | `~/.grok` + `~/.agents` |
+| Front end | How it sees the brain | Extra install |
+|-----------|----------------------|---------------|
+| **Claude Code** | Native. `install\install.ps1` deploys here. | None |
+| **Grok Build** | Built-in `compat.claude` (skills, rules, hooks, MCP, CLAUDE.md). | Thin adapter: `install\install-grok.ps1` |
 
-Pick the flavor that matches the CLI you actually run. You can install both on one machine; they share the flywheel tools and the skills payload, and keep their own hooks, MCP registrations, and login.
+You can run both on one machine. You edit rules and skills in `~/.claude/` once.
 
-New flavors (Codex, Gemini, …) should land the same way: a `flavors/<name>/` setup page, an `install/install-<name>.ps1`, and a `config/<name>/` template tree. Do not replace an existing flavor to add a new one.
+Do **not** add a new front end by copying `config/` into `~/.codex` / `~/.gemini` / `~/.agents`. If a CLI cannot read `~/.claude`, add the smallest adapter that makes it do so (a junction, a compat flag, a single hook JSON). If it still cannot, that is a real gap — document it; do not fork the brain.
+
+ntm worker panes are still Claude Code (`--cc`), including Grok-sub and Kimi via `cc-router`. See `config/rules/ntm-swarm.md` and `config/rules/harness-shared.md`.

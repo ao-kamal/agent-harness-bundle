@@ -1,84 +1,53 @@
-# 06 — Grok flavor
+# 06 — Grok as a front end
 
-The first five chapters are flavor-blind. This chapter is the Grok-specific map: where files live, what Grok already does for you, and what is still Claude-shaped in the shared flywheel.
+The first five chapters are harness-blind. This chapter is only the map of how Grok Build sits on the **same** brain as Claude Code.
 
-Read 01–05 first.
+Read 01–05 first. Read `config/rules/harness-shared.md` — that is the contract.
 
 ## What changes, what does not
 
 Does **not** change:
 
 - The planning loop (intent → plan → beads → execute → harden)
-- Skills payload (~110 skills)
+- Skills, rules, CLAUDE.md (they stay in `~/.claude/`)
 - Windows + WSL hybrid, 127.0.0.1, hot/cold disk rule
 - dcg / slb / cass / cm / br / bv / ntm / Agent Mail
+- Claude auto-memory files (Grok reads and writes them)
 
 Does change:
 
-- You run `grok`, not `claude`
-- Config lives in `~/.grok` (and `~/.agents`), not `~/.claude`
-- Hooks use Grok's JSON envelope (`toolInput`, camelCase) and Grok event names (`PreCompact` / `PostCompact`)
-- MCP is registered with `grok mcp add`, written into `~/.grok/config.toml`
-- Custom agents are markdown in `~/.grok/agents/`
-- Kimi is a `[model.kimi-for-coding]` entry, not `ANTHROPIC_BASE_URL` in a Windows Terminal tab
+- You run `grok` for daily work, not `claude`
+- Grok-only knobs live in `~/.grok/config.toml` (memory on, `compat.claude` pinned)
+- Compaction events are `PreCompact` / `PostCompact`; the shared PCR script understands both envelopes
+- ntm still has no native Grok pane. Operator sits in Grok. Workers stay `--cc` (Grok-sub or Kimi via `cc-router`)
 
 ## Where Grok looks
 
-Grok already scans Claude and `.agents` paths. The Grok flavor still deploys to native Grok locations so the machine works if Claude compatibility is later turned off.
+Grok scans Claude paths by default. That is the whole design. The thin adapter does **not** deploy a second skills/rules tree so the machine still works if someone later turns compat off — if compat is off, turn it back on.
 
-| Thing | Grok-native path | Also loaded |
-|-------|------------------|-------------|
-| Skills | `~/.grok/skills/` | `~/.agents/skills/`, `~/.claude/skills/` |
-| Rules | `~/.grok/rules/` | `~/.agents/rules/`, `AGENTS.md` |
-| Hooks | `~/.grok/hooks/*.json` | Claude `settings.json` if compat is on |
-| Agents | `~/.grok/agents/` | project `.grok/agents/` |
-| MCP | `~/.grok/config.toml` `[mcp_servers.*]` | — |
-| Memory / sessions | `~/.grok/sessions/` | — |
+| Thing | Canonical path | Grok-only extra |
+|-------|----------------|-----------------|
+| Skills | `~/.claude/skills/` | none |
+| Rules | `~/.claude/rules/` + `CLAUDE.md` | none |
+| Hooks | `~/.claude/settings.json` + `~/.claude/hooks/` | `~/.grok/hooks/compact.json` calls the shared PCR |
+| Agents | `~/.claude/agents/` | none required |
+| MCP | Claude registrations (`compat.claude.mcps`) | optional `grok mcp add` fallback |
+| Auto-memory | `~/.claude/projects/*/memory/` | junction `~/.grok/memory/from-claude` |
 
-Home instruction file is `AGENTS.md` (Grok's default). `CLAUDE.md` is still recognized if present.
+## Memory
 
-## Hooks that must be native
-
-Grok aliases Claude tool names in hook matchers (`Bash` → `run_terminal_command`). That is not enough for the two reminder/guard scripts:
-
-- **dcg** — same binary, `PreToolUse` matcher `Bash|PowerShell|run_terminal_command`
-- **trauma_guard.py** — must read `toolInput.command` (Grok) as well as `tool_input.command` (Claude)
-- **post-compact-reminder.py** — Claude injects SessionStart/compact stdout. Grok compaction is `PreCompact` / `PostCompact`. The Grok script emits `additionalContext` on those events and still prints the old Claude stdout form if `source=compact`
-
-`UserPromptSubmit` cannot block on Grok (observe-only). Do not port a Claude prompt-validation hook and expect it to gate.
-
-## Kimi
-
-Claude flavor: a Terminal profile exports Anthropic-compatible env vars and you run `claude` in that tab.
-
-Grok flavor: `/model kimi-for-coding`. The model block talks to `https://api.kimi.com/coding` with `api_backend = "messages"`. Key file is still `~/.config/kimi/key`.
-
-## Flywheel on the Grok flavor
-
-The Grok installer installs the same flywheel binaries as the Claude flavor. It does **not** send you to `install.ps1`. Differences from the Claude installer, all learned on the first Grok deploy:
-
-- Scoop `main` must be a git repo. A zip fallback leaves `fatal: not a git repository`. Fix: `gh repo clone ScoopInstaller/Main ~/scoop/buckets/main -- --depth 1`.
-- The dicklesworthstone bucket lists 0 manifests unless `*.json` is copied into `bucket/`.
-- `scoop install dicklesworthstone/cm` fails a hash check (published exe moved). Grok flavor downloads `cass-memory-windows-x64.exe` with `gh release download`.
-- `br` must be `br-*-windows_amd64.exe`. A loose `*windows*` match can install a file named `.exe` that is not a PE; the installer refuses it.
-- Hook JSON must be UTF-8 **without BOM** or Grok reports `Hooks (0)`.
-- The dcg hook path is `~/.local/bin/dcg.exe`. After scoop install, the installer copies `scoop\apps\dcg\current\dcg.exe` there.
+Claude auto-memory is the shared writable store. Grok must write new `user_` / `project_` / `reference_` / `feedback_` files there and keep that project's `MEMORY.md` current. `~/.grok/memory/MEMORY.md` is a pointer, not a second brain. cass / `cm` stay the procedural and session-history layer.
 
 ## Honest limit: ntm has no Grok pane type
 
-As of this flavor, `ntm spawn` understands `--cc`, `--cod`, `--gmi`, and Kimi-as-cc-variant. There is no `--grok=N`. The operator sits in Grok; worker panes stay Claude/Codex/Gemini/Kimi until ntm grows a Grok agent. Project `AGENTS.md` is the shared contract across those pane types.
+`ntm spawn` understands `--cc`, `--cod`, `--gmi` / `--agy`, and Kimi-as-cc-variant. There is no first-class `--grok=N` you should depend on. Grok-sub workers: `ntm spawn <proj> --cc=N:grok-4.6` after CLIProxyAPI is up on `127.0.0.1:8317`.
 
-## Commands you will type instead
+## Commands
 
 | Claude | Grok |
 |--------|------|
 | `claude` | `grok` |
-| `claude mcp add …` | `grok mcp add …` |
-| `claude mcp list` | `grok mcp list` |
-| `claude plugin …` | `grok plugin …` |
-| (no equivalent) | `grok inspect` |
+| (brain already in `~/.claude`) | `grok inspect` to confirm it loaded that brain |
 | `/model` inside Claude | `/model` or `Ctrl+M` inside Grok |
 
-## Trust
-
-Project hooks and project MCP need folder trust: `/hooks-trust` or `grok --trust`. Global `~/.grok/hooks/` is always trusted.
+Do not run `claude mcp add` **and** `grok mcp add` for the same server unless compat MCP is actually broken.

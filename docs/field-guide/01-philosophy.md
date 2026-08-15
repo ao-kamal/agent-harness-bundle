@@ -9,7 +9,7 @@ The chapters in this field guide build on each other:
 3. **Windows + WSL** — the mental model for the hybrid setup this bundle installs.
 4. **Meta-learnings** — fifteen specific, transferable lessons, each earned the hard way.
 5. **Vault hygiene** — how to keep your own notes clean once you start writing things down.
-6. **Grok flavor** — what changes when the agent CLI is Grok instead of Claude Code. Skip if you are on the Claude flavor.
+6. **Grok as a front end** — how Grok Build reads and writes the same `~/.claude` brain. Skip only if you will never run `grok`.
 
 Read them in order once. After that, they're reference — come back to whichever one is relevant.
 

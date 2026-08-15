@@ -4,7 +4,7 @@ This bundle isn't a one-time install. Three separate things get updated over its
 
 | What | How | How often |
 |---|---|---|
-| The bundle (config, field guide, installer) | `git pull` + re-run `install.ps1` | Whenever Kamal pushes something and you feel like catching up |
+| The bundle (config, field guide, installer) | `git pull` + re-run `install.ps1` (and `install-grok.ps1` if you sit in Grok) | Whenever Kamal pushes something and you feel like catching up |
 | The CLI tools (cass, ntm, br, bv, caam, dcg, ...) | `docs/methodology/tooling-update-runbook-generic.md` | Every few weeks, or when something feels stale |
 | Skills library | Default: bundle re-copy (above). Optional: `jsm` with a paid subscription | Same as the bundle, unless you subscribe |
 
@@ -13,15 +13,13 @@ This bundle isn't a one-time install. Three separate things get updated over its
 Kamal keeps improving this repo after you've installed it — new lessons learned, fixed gotchas, better defaults. You don't need to redo the install to pick those up:
 
 ```powershell
-cd claude-harness-bundle
+cd agent-harness-bundle
 git pull
-# Claude flavor
 powershell -ExecutionPolicy Bypass -File install\install.ps1 -Update
-# Grok flavor
 powershell -ExecutionPolicy Bypass -File install\install-grok.ps1 -Update
 ```
 
-The `-Update` flag is what makes updates land: it re-copies the skills payload and re-renders the config templates for that flavor while leaving every completed install untouched. Claude state lives in `%USERPROFILE%\.harness-bundle-state.json`. Grok state lives in `%USERPROFILE%\.harness-bundle-grok-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
+The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies the skills payload and re-renders the **shared** `~/.claude` templates. `install-grok.ps1 -Update` only refreshes the thin Grok adapter (memory junction, compat pin, compact hook). State files: `%USERPROFILE%\.harness-bundle-state.json` and `%USERPROFILE%\.harness-bundle-grok-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
 
 ## Re-run the smoke test after ANY infrastructure change
 
@@ -35,7 +33,7 @@ The CLI tools this bundle installs (cass, cm, br, bv, caam, dcg, ubs, ntm, Agent
 
 ## Updating skills
 
-Most of the skills this bundle installs are file copies — plain markdown living under `~/.claude/skills/` (Claude flavor) and `~/.grok/skills/` plus `~/.agents/skills/` (Grok flavor). The default way they update is the same as everything else in the bundle: `git pull` plus a re-run of the matching installer, which re-copies the skills payload from this repo.
+Most of the skills this bundle installs are file copies — plain markdown living under `~/.claude/skills/` only. Grok reads that directory. The default way they update is `git pull` plus `install.ps1 -Update`, which re-copies the skills payload from this repo into that one place.
 
 There's a second, optional path: a subscription to Jeffrey's Skills.md (the marketplace these skills originate from) lets the `jsm` CLI sync new and updated skills directly from that marketplace, independent of this bundle's own release schedule. This bundle does **not** assume you have that subscription, and doesn't require it — without it, skills update purely through this repo, on whatever cadence Kamal pushes updates. If you decide later that you want faster, direct-from-source skill updates, `jsm sync --status` (no subscription needed just to check) shows you what's available, and `jsm sync --force` pulls it if you do subscribe. Treat this as a nice-to-have upgrade path, not something you're missing out on by skipping it.
 

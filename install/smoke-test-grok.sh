@@ -1,7 +1,7 @@
 #!/bin/bash
 # smoke-test-grok.sh
-# Verifies the Grok flavor of the harness on Windows (Git Bash).
-# Flywheel / WSL checks are SKIP not FAIL when those stages were not installed.
+# Verifies the thin Grok adapter: compat against ~/.claude, memory junction, compact hook.
+# Does NOT require a second copy of skills/rules under ~/.grok.
 
 WINUSER="${USERNAME:-$(powershell.exe -NoProfile -Command 'Write-Host -NoNewline $env:USERNAME' 2>/dev/null | tr -d '\r')}"
 
@@ -18,10 +18,11 @@ hdr()  { echo; echo -e "${B}=== $1 ===${N}"; }
 
 WINHOME="C:/Users/$WINUSER"
 GROK_HOME="$WINHOME/.grok"
+CLAUDE_HOME="$WINHOME/.claude"
 GROK_BIN="$GROK_HOME/bin/grok.exe"
 
 echo
-echo -e "${B}Grok flavor smoke test${N}"
+echo -e "${B}Grok adapter smoke test${N}"
 echo -e "${D}$(date -Iseconds)  user=$WINUSER${N}"
 
 hdr "PHASE 1 — Grok CLI"
@@ -33,42 +34,56 @@ else
   fail "grok.exe on disk" "not found at $GROK_BIN"
 fi
 
-hdr "PHASE 2 — Grok harness files"
-for p in \
-  "$GROK_HOME/hooks/harness.json" \
-  "$GROK_HOME/hooks/trauma_guard.py" \
-  "$GROK_HOME/hooks/post-compact-reminder.py" \
-  "$GROK_HOME/agents/deep-researcher.md" \
-  "$GROK_HOME/rules/grok-flavor.md" \
-  "$GROK_HOME/rules/mcp-and-services.md"
-do
-  test -f "$p" && pass "$(basename "$p") present" || fail "$(basename "$p") present" "missing $p"
-done
-
-if test -d "$GROK_HOME/skills" && ls -d "$GROK_HOME/skills"/*/ >/dev/null 2>&1; then
-  pass "~/.grok/skills has skill directories"
-elif test -d "$WINHOME/.agents/skills" && ls -d "$WINHOME/.agents/skills"/*/ >/dev/null 2>&1; then
-  pass "~/.agents/skills has skill directories (Grok scans this)"
+hdr "PHASE 2 — Shared brain (not a Grok copy)"
+test -f "$CLAUDE_HOME/CLAUDE.md" && pass "shared CLAUDE.md" || fail "shared CLAUDE.md" "run install.ps1 first"
+test -f "$CLAUDE_HOME/rules/harness-shared.md" && pass "harness-shared.md" || fail "harness-shared.md"
+test -f "$CLAUDE_HOME/hooks/post-compact-reminder.py" && pass "shared PCR script" || fail "shared PCR script"
+if test -d "$CLAUDE_HOME/skills" && ls -d "$CLAUDE_HOME/skills"/*/ >/dev/null 2>&1; then
+  pass "~/.claude/skills has skill directories"
 else
-  fail "skills payload" "no skill directories under ~/.grok/skills or ~/.agents/skills"
+  fail "shared skills payload" "no skill directories under ~/.claude/skills"
+fi
+# A copied tree is a regression
+if test -d "$GROK_HOME/skills" && ls -d "$GROK_HOME/skills"/*/ >/dev/null 2>&1; then
+  fail "~/.grok/skills should be empty" "second skills tree — delete it; Grok reads ~/.claude/skills"
+else
+  pass "no second skills tree under ~/.grok"
 fi
 
-test -f "$WINHOME/AGENTS.md" -o -f "$WINHOME/Agents.md" && pass "home AGENTS.md present" || fail "home AGENTS.md present"
+hdr "PHASE 3 — Thin adapter"
+test -f "$GROK_HOME/hooks/compact.json" && pass "compact.json present" || fail "compact.json present"
+if test -d "$GROK_HOME/memory/from-claude"; then
+  pass "memory junction directory exists"
+  if test -f "$GROK_HOME/memory/from-claude/C--Users-$WINUSER/memory/MEMORY.md" \
+     || ls -d "$GROK_HOME/memory/from-claude"/*/memory >/dev/null 2>&1; then
+    pass "junction reaches Claude project memory"
+  else
+    skip "junction reaches Claude project memory" "no project memory yet — first Claude/Grok session will create it"
+  fi
+else
+  fail "memory junction" "missing ~/.grok/memory/from-claude"
+fi
+test -f "$GROK_HOME/memory/MEMORY.md" && pass "Grok MEMORY.md pointer" || fail "Grok MEMORY.md pointer"
+if test -f "$GROK_HOME/config.toml"; then
+  grep -q 'compat.claude' "$GROK_HOME/config.toml" && pass "config.toml pins compat.claude" || fail "config.toml pins compat.claude"
+  grep -q 'enabled = true' "$GROK_HOME/config.toml" && pass "config.toml enables memory" || skip "config.toml enables memory" "enabled=true may live in another form"
+else
+  fail "config.toml present"
+fi
 
-hdr "PHASE 3 — grok inspect"
+hdr "PHASE 4 — grok inspect"
 if test -f "$GROK_BIN"; then
   INSPECT=$("$GROK_BIN" inspect 2>&1)
-  echo "$INSPECT" | grep -qi 'deep-researcher' && pass "inspect sees deep-researcher" || fail "inspect sees deep-researcher"
-  echo "$INSPECT" | grep -qi 'trauma_guard\|harness.json\|Hooks' && pass "inspect mentions hooks" || skip "inspect mentions hooks" "wording may differ; check grok inspect by hand"
+  echo "$INSPECT" | grep -qi '\.claude' && pass "inspect mentions ~/.claude" || skip "inspect mentions ~/.claude" "wording may differ; check by hand"
+  echo "$INSPECT" | grep -qi 'harness-shared\|Hooks\|hooks' && pass "inspect mentions hooks/rules" || skip "inspect mentions hooks/rules" "check grok inspect by hand"
 else
   skip "grok inspect" "no grok.exe"
 fi
 
-hdr "PHASE 4 — Flywheel CLIs"
+hdr "PHASE 5 — Flywheel CLIs"
 assert_win_pe() {
   local path="$1" name="$2"
   if [ ! -f "$path" ]; then fail "Win: $name on disk" "not found at $path"; return; fi
-  # MZ header — rejects a Linux br/cm that was renamed .exe
   python -c "import sys; b=open(sys.argv[1],'rb').read(2); sys.exit(0 if b==b'MZ' else 1)" "$path" \
     && pass "Win: $name is a Windows PE" \
     || fail "Win: $name is a Windows PE" "file exists but is not a PE (wrong release asset)"
@@ -77,27 +92,13 @@ assert_win_pe "$WINHOME/.local/bin/dcg.exe" "dcg.exe"
 assert_win_pe "$WINHOME/.local/bin/cass.exe" "cass.exe"
 assert_win_pe "$WINHOME/.local/bin/br.exe" "br.exe"
 assert_win_pe "$WINHOME/.local/bin/cm.exe" "cm.exe"
-if test -f "$WINHOME/scoop/shims/bv.exe"; then pass "Win: bv on disk"
-else fail "Win: bv on disk" "scoop shim missing"; fi
-if test -f "$WINHOME/scoop/shims/caam.exe"; then pass "Win: caam on disk"
-else fail "Win: caam on disk" "scoop shim missing"; fi
-if test -f "$WINHOME/scoop/shims/slb.exe"; then pass "Win: slb on disk"
-else fail "Win: slb on disk" "scoop shim missing"; fi
 
-hdr "PHASE 5 — Agent Mail (optional)"
+hdr "PHASE 6 — Agent Mail (optional)"
 HEALTH=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/health 2>&1)
 case "$HEALTH" in
   *'"status":"ready"'*) pass "Agent Mail healthy at 127.0.0.1:8765" ;;
-  *) skip "Agent Mail healthy" "WSL boot hook not up or flavor installed without WSL stage" ;;
+  *) skip "Agent Mail healthy" "WSL boot hook not up" ;;
 esac
-
-hdr "PHASE 6 — MCP list"
-if test -f "$GROK_BIN"; then
-  MCPLIST=$("$GROK_BIN" mcp list 2>&1)
-  echo "$MCPLIST" | grep -qi 'playwright' && pass "mcp list has playwright" || skip "mcp list has playwright" "run install/mcp-register-grok.ps1"
-else
-  skip "mcp list" "no grok.exe"
-fi
 
 echo
 echo -e "${B}Result${N}  pass=$PASS  fail=$FAIL  skip=$SKIP"

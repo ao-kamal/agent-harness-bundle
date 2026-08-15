@@ -1,4 +1,6 @@
-# Grok-flavor MCP registrations (Windows + WSL)
+# Optional Grok-native MCP fallback.
+# Prefer compat.claude.mcps (Grok reads Claude registrations).
+# Only run this if grok inspect shows Claude MCP but those servers fail to connect.
 # Registration is via `grok mcp add` into ~/.grok/config.toml.
 # Idempotent: re-adding an existing name is a no-op/notice. Values never echoed.
 
