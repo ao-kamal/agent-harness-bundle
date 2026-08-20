@@ -125,35 +125,8 @@ if ($Update -or -not ($state.completed -contains 'compact-hook')) {
     if (-not (Test-Path $pcr)) {
         Write-Warn2 ('shared PCR missing at ' + $pcr + ' - compact hook will still be written')
     }
-    $pcrCmd = 'python "C:\Users\' + $script:WinUser + '\.claude\hooks\post-compact-reminder.py"'
-    $hookJson = @"
-{
-  "hooks": {
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$pcrCmd",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$pcrCmd",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-"@
+    $tpl = Join-Path $script:BundleRoot 'config\grok\hooks.json'
+    $hookJson = (Get-Content $tpl -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser
     $hookPath = Join-Path $script:GrokHome 'hooks\compact.json'
     Write-Utf8NoBom $hookPath $hookJson
     Write-Ok ('wrote ' + $hookPath + ' (UTF-8 no BOM) -> shared PCR')
@@ -169,25 +142,8 @@ if ($Update -or -not ($state.completed -contains 'dcg-hook')) {
     } elseif (-not (Test-Path $bridgeDst)) {
         Write-Warn2 ('dcg-grok-bridge.py missing at ' + $bridgeSrc)
     }
-    $dcgCmd = 'python "C:\Users\' + $script:WinUser + '\.claude\hooks\dcg-grok-bridge.py"'
-    $dcgJson = @"
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash|PowerShell|run_terminal_command",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$dcgCmd",
-            "timeout": 15
-          }
-        ]
-      }
-    ]
-  }
-}
-"@
+    $tpl = Join-Path $script:BundleRoot 'config\grok\dcg.json'
+    $dcgJson = (Get-Content $tpl -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser
     $dcgPath = Join-Path $script:GrokHome 'hooks\dcg.json'
     Write-Utf8NoBom $dcgPath $dcgJson
     Write-Ok ('wrote ' + $dcgPath + ' -> shared dcg-grok-bridge.py')
