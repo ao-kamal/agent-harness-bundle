@@ -29,7 +29,8 @@ Docs: https://antigravity.google/docs/cli/install
 - Sit in `agy`.
 - Edit rules and skills under `~/.claude/` only.
 - Project contract is still the repo `AGENTS.md`.
-- Swarms: `ntm spawn <project> --agy=N`. Unattended: `agy --dangerously-skip-permissions`.
+- Swarms: `ntm spawn <project> --agy=N:<model-id>` (always pass the id; bare `--agy=N` pins Gemini 3.7 Flash High). List ids with `agy models`. Do not put agy behind CLIProxy.
+- WSL: ntm needs `/usr/local/bin/agy` exec'ing the Windows `agy.exe` so Google OAuth stays on the Windows account.
 
 ## If a junction is blocked
 

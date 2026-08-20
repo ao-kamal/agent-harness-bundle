@@ -51,7 +51,7 @@ When saving a memory:
 ## Daily driver vs swarms
 
 - **Daily work:** whichever CLI you sit in. Grok Build reads this tree via `compat.claude`. Antigravity (`agy`) reads it via the skill/rule junctions from `install\install-antigravity.ps1`.
-- **Swarms:** ntm 1.29+ can `spawn --grok=N` and `--robot-send` / interrupt / restart (ntm#251 shipped). Prefer native Grok panes. The `--cc=N:grok-4.6` CLIProxyAPI path is fallback only. See `ntm-swarm.md`.
+- **Swarms:** ntm 1.29+ can `spawn --grok=N` and `--agy=N:<model-id>` with send/interrupt. Grok and Antigravity use their own CLIs. Do not put Antigravity behind CLIProxy. See `ntm-swarm.md`.
 
 ## Inspect
 
