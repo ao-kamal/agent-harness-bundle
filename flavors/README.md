@@ -12,4 +12,4 @@ You can run all three on one machine. You edit rules and skills in `~/.claude/` 
 
 Do **not** add a new front end by copying `config/` into `~/.codex` / `~/.gemini` / `~/.agents`. If a CLI cannot read `~/.claude`, add the smallest adapter that makes it do so (a junction, a compat flag, a single hook JSON). If it still cannot, that is a real gap — document it; do not fork the brain.
 
-ntm: `--agy` is first-class. `--grok=N` is phase-1 spawn only (send is fail-closed, ntm#251). Until then, automated Grok dispatch stays `--cc=N:grok-4.6`. See `config/rules/ntm-swarm.md` and `config/rules/harness-shared.md`.
+ntm: `--agy` is first-class. `--grok=N` includes send/interrupt as of ntm 1.29 (ntm#251). `--cc=N:grok-4.6` is fallback only. See `config/rules/ntm-swarm.md` and `config/rules/harness-shared.md`.
