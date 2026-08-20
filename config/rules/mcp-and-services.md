@@ -27,7 +27,7 @@ Do NOT declare MCP servers via a `mcpServers` block in `settings.json` — Claud
 
 Multi-agent coordination layer (file reservations, messaging, inboxes) used by ntm swarms.
 
-- **Server runs in WSL**: `am serve-http --host 0.0.0.0 --port 8765`, started by the WSL `[boot] command` hook (`/usr/local/sbin/mount-fast-data.sh`) on every WSL cold boot — NOT systemd, NOT a Windows scheduled task. Logs: `/root/.config/mcp-agent-mail/serve.log`. Process name is `am serve-http` — find via `pgrep -af 'serve-http'`; stop with `pkill -f 'am serve-http'` (SIGTERM, NEVER -9 / taskkill — force-kill corrupts the SQLite WAL).
+- **Server runs in WSL**: `am serve-http --host 0.0.0.0 --port 8765`, started by the WSL `[boot] command` hook (`/usr/local/sbin/mount-fast-data.sh`) on every WSL cold boot — NOT systemd, NOT a Windows scheduled task. Logs: `/root/.config/mcp-agent-mail/serve.log`. Process name is `am serve-http` — find via `pgrep -af 'serve-http'`; stop with `pkill -f 'am serve-http'` (SIGTERM, NEVER -9 / taskkill — force-kill corrupts the SQLite WAL; see runbook gotcha 12).
 - **Do not run this as a Windows-native daemon.** A Windows-native build of the server hits NTFS durable-write failures under its write-back queue — run it in WSL against native ext4 storage instead.
 - **Reachability**: mirrored networking + `127.0.0.1:8765` from both OSes. Health: `curl.exe http://127.0.0.1:8765/health` (allow 10-15s after server start before judging).
 - **Config:** `C:\Users\{{WIN_USER}}\.config\mcp-agent-mail\config.env` — `HTTP_BEARER_TOKEN` lives here (the ONLY place it should exist; generate a fresh one, never reuse a token from anywhere else).

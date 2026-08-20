@@ -10,7 +10,7 @@ The brain is shared. The CLI you sit in is a front end. Edit `~/.claude/` once; 
 - **Front ends that consume it**: Claude Code natively; Grok Build via `compat.claude`; Antigravity CLI (`agy`) via junctions onto `~/.claude` (not a second copy).
 - **The flywheel CLI stack** (Jeffrey Emanuel's ecosystem): session search (cass), procedural memory (cm), bead task graphs (br + bv), multi-agent tmux orchestration (ntm), agent coordination (Agent Mail), account switching (caam), command guards (dcg + slb), and more.
 - **A Windows + WSL hybrid architecture** that actually works: shared credentials, hot/cold filesystem discipline, self-healing symlinks, boot-time daemons.
-- **The Kimi lane** and native **Grok Build panes** (`ntm spawn --grok=N`, send/interrupt shipped in ntm 1.29 / ntm#251). Claude Code `--cc=N:grok-4.6` via CLIProxyAPI is fallback only.
+- **Native swarm panes:** Grok (`ntm spawn --grok=N`), Antigravity (`--agy=N:<model-id>`, never CLIProxy), Kimi (`--cc=N:kimi-for-coding`). WSL shims exec the Windows `grok.exe` / `agy.exe`. Claude Code `--cc=N:grok-4.6` via CLIProxyAPI is Grok fallback only.
 - **A field guide** that teaches the mental models, because copying config files does not transfer judgment.
 
 ## Quick start

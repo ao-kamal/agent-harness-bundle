@@ -18,8 +18,9 @@ What that does:
 2. Junctions `~/.grok/memory/from-claude` → `~/.claude/projects` so Grok can search **and write** Claude auto-memory.
 3. Writes a pointer `~/.grok/memory/MEMORY.md`.
 4. Registers `~/.grok/hooks/compact.json` pointing at the **shared** `~/.claude/hooks/post-compact-reminder.py`.
-5. Registers `~/.grok/hooks/dcg.json` pointing at `~/.claude/hooks/dcg-grok-bridge.py` (dcg 0.11 did not parse Grok `toolInput`; see dcg#319).
+5. Registers `~/.grok/hooks/dcg.json` pointing at `~/.claude/hooks/dcg-grok-bridge.py` (belt-and-suspenders; dcg 0.11.1 parses Grok `toolInput` natively, dcg#319).
 6. Ensures the pinned ergo `dev-browser` CLI is on PATH and runs `dev-browser install` for Chromium (x-harvest). Does **not** run `dev-browser install-skill`.
+7. Copies `impeccable-hook.cmd` so Grok PostToolUse/Stop hooks do not run bash `[ ! -f ... ]` under PowerShell.
 
 What it does **not** do: copy skills, copy rules, write a second AGENTS.md, re-register MCP that Claude already has, reinstall scoop/WSL.
 
@@ -34,7 +35,7 @@ What it does **not** do: copy skills, copy rules, write a second AGENTS.md, re-r
 - Sit in `grok`.
 - Edit rules and skills under `~/.claude/`.
 - Write memories to `~/.claude/projects/<encoded-cwd>/memory/` (see `~/.claude/rules/harness-shared.md`).
-- Swarms: operator in Grok; ntm panes stay `--cc`, Grok-sub via `--cc=N:grok-4.6` once CLIProxyAPI is listening on `127.0.0.1:8317`.
+- Swarms: `ntm spawn <project> --grok=N` (native). `--cc=N:grok-4.6` via CLIProxyAPI is fallback only. WSL needs `/usr/local/bin/grok` pointing at Windows `grok.exe`.
 
 ## Optional MCP fallback
 

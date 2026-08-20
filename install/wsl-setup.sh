@@ -234,6 +234,20 @@ if ! done_step ntm-config; then
       chmod 755 /root/.local/bin/cc-router
       note "Kimi router installed (put your Kimi key at $WINHOME/.config/kimi/key)"
     fi
+    if [ -f "$BUNDLE_ROOT/config/antigravity/agy-wsl-wrapper" ]; then
+      render "$BUNDLE_ROOT/config/antigravity/agy-wsl-wrapper" /usr/local/bin/agy
+      chmod 755 /usr/local/bin/agy
+      note "agy WSL shim -> Windows agy.exe (no CLIProxy)"
+    fi
+    if [ -f "$BUNDLE_ROOT/config/grok/grok-wsl-wrapper" ]; then
+      render "$BUNDLE_ROOT/config/grok/grok-wsl-wrapper" /usr/local/bin/grok
+      chmod 755 /usr/local/bin/grok
+      note "grok WSL shim -> Windows grok.exe (no CLIProxy)"
+    fi
+    if [ ! -f /root/.config/ntm/config.toml ] && [ -f "$BUNDLE_ROOT/config/ntm/config.toml.fragment" ]; then
+      render "$BUNDLE_ROOT/config/ntm/config.toml.fragment" /root/.config/ntm/config.toml
+      note "ntm config.toml seeded from fragment (no removed 1.29 keys)"
+    fi
     # ntm safety wrappers + the temp-cleanup allow rule (installer temp dirs)
     ntm safety install >/dev/null 2>&1 || warn "ntm safety install failed (run manually later)"
     mkdir -p /root/.ntm

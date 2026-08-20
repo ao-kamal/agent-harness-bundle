@@ -1,6 +1,6 @@
 # 06 — Grok as a front end
 
-The first five chapters are harness-blind. This chapter is only the map of how Grok Build sits on the **same** brain as Claude Code.
+The first five chapters are harness-blind. This chapter is how Grok Build sits on the **same** brain as Claude Code.
 
 Read 01–05 first. Read `config/rules/harness-shared.md` — that is the contract.
 
@@ -19,28 +19,36 @@ Does change:
 - You run `grok` for daily work, not `claude`
 - Grok-only knobs live in `~/.grok/config.toml` (memory on, `compat.claude` pinned)
 - Compaction events are `PreCompact` / `PostCompact`; the shared PCR script understands both envelopes
-- ntm still has no native Grok pane. Operator sits in Grok. Workers stay `--cc` (Grok-sub or Kimi via `cc-router`)
+- ntm 1.29+ has native `--grok=N[:model[:effort]]` with send/interrupt (ntm#251). Prefer that over Claude Code + CLIProxyAPI
+- dcg 0.11.1 parses Grok `toolInput` / `run_terminal_command` natively (dcg#319). The thin `dcg-grok-bridge.py` remains as backup
 
 ## Where Grok looks
 
-Grok scans Claude paths by default. That is the whole design. The thin adapter does **not** deploy a second skills/rules tree so the machine still works if someone later turns compat off — if compat is off, turn it back on.
+Grok scans Claude paths by default. Do **not** copy skills or rules into `~/.grok/`. If `compat.claude` is off, turn it back on.
 
 | Thing | Canonical path | Grok-only extra |
 |-------|----------------|-----------------|
 | Skills | `~/.claude/skills/` | none |
 | Rules | `~/.claude/rules/` + `CLAUDE.md` | none |
-| Hooks | `~/.claude/settings.json` + `~/.claude/hooks/` | `~/.grok/hooks/compact.json` calls the shared PCR |
+| Hooks | `~/.claude/settings.json` + `~/.claude/hooks/` | `compact.json` (PCR) and `dcg.json` (bridge) |
 | Agents | `~/.claude/agents/` | none required |
 | MCP | Claude registrations (`compat.claude.mcps`) | optional `grok mcp add` fallback |
 | Auto-memory | `~/.claude/projects/*/memory/` | junction `~/.grok/memory/from-claude` |
 
+Impeccable PostToolUse/Stop hooks must be `cmd.exe /c ...\impeccable-hook.cmd`, not bash `[ ! -f ... ]`. Grok runs hooks in PowerShell.
+
 ## Memory
 
-Claude auto-memory is the shared writable store. Grok must write new `user_` / `project_` / `reference_` / `feedback_` files there and keep that project's `MEMORY.md` current. `~/.grok/memory/MEMORY.md` is a pointer, not a second brain. cass / `cm` stay the procedural and session-history layer.
+Claude auto-memory is the shared writable store. Grok writes `user_` / `project_` / `reference_` / `feedback_` files there and keeps that project's `MEMORY.md` current. `~/.grok/memory/MEMORY.md` is a pointer. cass / `cm` stay the procedural and session-history layer.
 
-## Honest limit: ntm has no Grok pane type
+## Swarms
 
-`ntm spawn` understands `--cc`, `--cod`, `--gmi` / `--agy`, and Kimi-as-cc-variant. There is no first-class `--grok=N` you should depend on. Grok-sub workers: `ntm spawn <proj> --cc=N:grok-4.6` after CLIProxyAPI is up on `127.0.0.1:8317`.
+```bash
+ntm spawn <proj> --grok=N
+ntm spawn <proj> --grok=N:grok-4.6
+```
+
+WSL needs `/usr/local/bin/grok` exec'ing the Windows `grok.exe` (same shape as the agy shim). `--cc=N:grok-4.6` via CLIProxyAPI is fallback only.
 
 ## Commands
 

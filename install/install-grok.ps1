@@ -133,7 +133,7 @@ if ($Update -or -not ($state.completed -contains 'compact-hook')) {
     Complete-Stage $state 'compact-hook'
 }
 
-# --- dcg PreToolUse bridge (dcg 0.11 does not parse Grok toolInput; see dcg#319) ---
+# --- dcg PreToolUse bridge (dcg 0.11.1 parses Grok natively; bridge is backup, dcg#319) ---
 if ($Update -or -not ($state.completed -contains 'dcg-hook')) {
     $bridgeSrc = Join-Path $script:BundleRoot 'config\hooks\dcg-grok-bridge.py'
     $bridgeDst = Join-Path $script:ClaudeHome 'hooks\dcg-grok-bridge.py'
@@ -142,6 +142,9 @@ if ($Update -or -not ($state.completed -contains 'dcg-hook')) {
     } elseif (-not (Test-Path $bridgeDst)) {
         Write-Warn2 ('dcg-grok-bridge.py missing at ' + $bridgeSrc)
     }
+    $impSrc = Join-Path $script:BundleRoot 'config\hooks\impeccable-hook.cmd'
+    $impDst = Join-Path $script:ClaudeHome 'hooks\impeccable-hook.cmd'
+    if (Test-Path $impSrc) { Copy-Item $impSrc $impDst -Force }
     $tpl = Join-Path $script:BundleRoot 'config\grok\dcg.json'
     $dcgJson = (Get-Content $tpl -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser
     $dcgPath = Join-Path $script:GrokHome 'hooks\dcg.json'

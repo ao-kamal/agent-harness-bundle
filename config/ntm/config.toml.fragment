@@ -1,0 +1,24 @@
+# Merge into ~/.config/ntm/config.toml on WSL (unix LF).
+# ntm 1.29 rejects: suggestions_enabled, integrations.caut, integrations.proxy.
+# Do not re-add those keys.
+
+projects_base = "/root/ntm_Dev"
+
+[agents]
+claude = "/root/.local/bin/cc-router --dangerously-skip-permissions{{if .Model}} --model {{shellQuote .Model}}{{end}}{{if .SystemPromptFile}} --system-prompt-file {{shellQuote .SystemPromptFile}}{{end}}"
+antigravity = "/usr/local/bin/agy --dangerously-skip-permissions{{if .Model}} --model {{shellQuote .Model}}{{end}}{{if .SystemPromptFile}} --prompt-interactive \"$(cat {{shellQuote .SystemPromptFile}})\"{{end}}"
+grok = "/usr/local/bin/grok{{if .Model}} --model {{shellQuote .Model}}{{end}} --always-approve"
+
+[integrations.rch]
+enabled = false
+
+[integrations.process_triage]
+enabled = false
+
+[integrations.rano]
+enabled = false
+
+[coordinator]
+auto_assign = true
+send_digests = true
+digest_interval = "15m"

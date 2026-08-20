@@ -1,0 +1,4 @@
+#!/bin/bash
+# WSL shim for ntm --grok panes. Interop runs the Windows grok.exe.
+# No CLIProxy. Model comes from ntm --grok=N[:model[:effort]].
+exec /mnt/c/Users/{{WIN_USER}}/.grok/bin/grok.exe "$@"

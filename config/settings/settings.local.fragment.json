@@ -31,5 +31,33 @@
       "PowerShell(claude *)",
       "PowerShell(caam *)"
     ]
-  }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd.exe /c C:\\Users\\{{WIN_USER}}\\.claude\\hooks\\impeccable-hook.cmd",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd.exe /c C:\\Users\\{{WIN_USER}}\\.claude\\hooks\\impeccable-hook.cmd",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector. Use cmd.exe wrapper; Grok runs hooks in PowerShell and bash [ ! -f ] fails at char 2. Do not put API keys in this file."
 }

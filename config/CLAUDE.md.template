@@ -75,7 +75,7 @@ As you build out your own vault, keep an index of methodology docs (pipeline-con
 
 ## Rules Directory Index (`~/.claude/rules/` — all files load every session)
 
-- **`harness-shared.md`** — one-brain contract: `~/.claude` is canonical for every front end, Claude auto-memory is the shared writable store, swarms stay Claude Code panes on the Grok sub.
+- **`harness-shared.md`** — one-brain contract: `~/.claude` is canonical for every front end, Claude auto-memory is the shared writable store, ntm swarms use native `--grok` / `--agy=<model-id>`.
 - **`windows-commands.md`** — Windows command discipline: GitHub-README-exactly rule, no emojis in code, process management, streamable-by-design output, bash-over-cmd, Windows gotchas (schtasks/chmod/symlink-writes/networking/BITS/PowerShell-BOM), Python on Windows, the secrets-in-`.env.private` pattern.
 - **`wsl-patterns.md`** — WSL invocation discipline (heredoc rules + pre-rejected rationalizations) and the Win+WSL hybrid architecture: cross-OS symlinks, the WSL boot hook, credentials watcher, hot/cold filesystem rule + hot-data enforcement, auth-vs-identity split, claude trust wrapper, IS_SANDBOX, smoke-test status.
 - **`ntm-swarm.md`** — NTM swarm operations: the full gotcha catalog, Kimi panes, `.git/` dialog cascade, paste-placeholder trap, model-staleness re-confirm rule, and swarm conventions (bead-ID threading, staggered starts, PCR, SLB, AGENTS.md bootstrap).
