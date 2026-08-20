@@ -18,7 +18,8 @@ What that does:
 2. Junctions `~/.grok/memory/from-claude` → `~/.claude/projects` so Grok can search **and write** Claude auto-memory.
 3. Writes a pointer `~/.grok/memory/MEMORY.md`.
 4. Registers `~/.grok/hooks/compact.json` pointing at the **shared** `~/.claude/hooks/post-compact-reminder.py`.
-5. Registers `~/.grok/hooks/dcg.json` pointing at `~/.claude/hooks/dcg-grok-bridge.py` (dcg 0.11 does not parse Grok `toolInput`; see dcg#319).
+5. Registers `~/.grok/hooks/dcg.json` pointing at `~/.claude/hooks/dcg-grok-bridge.py` (dcg 0.11 did not parse Grok `toolInput`; see dcg#319).
+6. Ensures the pinned ergo `dev-browser` CLI is on PATH and runs `dev-browser install` for Chromium (x-harvest). Does **not** run `dev-browser install-skill`.
 
 What it does **not** do: copy skills, copy rules, write a second AGENTS.md, re-register MCP that Claude already has, reinstall scoop/WSL.
 

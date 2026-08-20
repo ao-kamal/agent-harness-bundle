@@ -150,5 +150,12 @@ if ($Update -or -not ($state.completed -contains 'dcg-hook')) {
     Complete-Stage $state 'dcg-hook'
 }
 
+# --- x-harvest needs the CLI, not just the skill (issue #5) ---
+if ($Update -or -not ($state.completed -contains 'dev-browser')) {
+    . (Join-Path $script:BundleRoot 'install\_dev-browser.ps1')
+    Ensure-PinnedDevBrowser
+    Complete-Stage $state 'dev-browser'
+}
+
 Write-Ok 'Grok adapter done. Run: grok inspect   and   bash install/smoke-test-grok.sh'
 Write-Info 'Do not copy skills or rules into ~/.grok. Edit ~/.claude.'

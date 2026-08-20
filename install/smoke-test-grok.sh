@@ -73,6 +73,14 @@ else
   fail "config.toml present"
 fi
 
+hdr "PHASE 3b — dev-browser CLI (x-harvest)"
+if command -v dev-browser >/dev/null 2>&1 || test -f "$WINHOME/AppData/Roaming/npm/dev-browser.cmd"; then
+  DBVER=$(dev-browser --version 2>/dev/null || "$WINHOME/AppData/Roaming/npm/dev-browser.cmd" --version 2>/dev/null || true)
+  echo "$DBVER" | grep -qi ergo && pass "dev-browser ergo CLI on PATH ($DBVER)" || fail "dev-browser ergo CLI" "got: $DBVER"
+else
+  fail "dev-browser on PATH" "skill is not enough; run install.ps1 or install-grok.ps1 (do not run install-skill)"
+fi
+
 hdr "PHASE 4 — grok inspect"
 if test -f "$GROK_BIN"; then
   INSPECT=$("$GROK_BIN" inspect 2>&1)
