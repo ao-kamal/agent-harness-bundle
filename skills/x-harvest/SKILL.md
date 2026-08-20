@@ -1,6 +1,6 @@
 ---
 name: x-harvest
-description: Harvest a public X (Twitter) account's full post history — tweets, threads, long-form, and Articles — via network-layer GraphQL capture into normalized JSON, with an optional Obsidian-vault corpus writer. Operator-driven (manual login). Invoke with /x-harvest.
+description: Harvest a public X (Twitter) account's full post history, or the logged-in user's Bookmarks, via network-layer GraphQL capture into normalized JSON, with an optional Obsidian-vault corpus writer. Operator-driven (manual login). Invoke with /x-harvest.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 > **Core insight:** X's own frontend receives every tweet as a GraphQL JSON payload. Capture *those* — not the DOM — and virtualization can't hide rows, long text isn't truncated, and threads/quotes/media arrive structured. The DOM is only a scroll motor and a completeness check.
 
-Harvest any public X account into a **normalized JSON** artifact (the universal output), then optionally render it to an Obsidian-vault markdown corpus (one consumer). Proven on a 253-post reference corpus (posts across tweets, threads, and 25 Articles invisible to search).
+Harvest any public X account — or the operator's **Bookmarks** — into a **normalized JSON** artifact (the universal output), then optionally render it to an Obsidian-vault markdown corpus (one consumer). Account harvest proven on a 253-post reference corpus. Bookmarks harvest proven on a 165-item logged-in corpus (GraphQL op `Bookmarks`, History → Bookmarks tab).
 
 **Platform:** dev-browser must run **headful** (X login needs a real window). On Windows call `dev-browser` directly; from WSL call the Windows `.exe`. Depends on the **dev-browser** skill — load it if you haven't.
 
@@ -20,9 +20,10 @@ Harvest any public X account into a **normalized JSON** artifact (the universal 
 
 ```
 [1] LOGIN GATE   operator logs in manually (once, persistent page)
-[2] CAPTURE      4 surfaces → ~/.dev-browser/tmp/{tsnet_*, ts_slice*, ts_profile*, ts_article_*}.json
-[3] PARSE        parse.py → <handle>-harvest-<date>.json  (+ completeness report)
-[4] CONSUME      ingest_corpus.py → vault markdown   (optional, one of many consumers)
+[2] CAPTURE      account: 4 surfaces → ~/.dev-browser/tmp/{tsnet_*, ts_slice*, ts_profile*, ts_article_*}.json
+                 bookmarks: 1 surface → ~/.dev-browser/tmp/{tsnet_*, ts_bm_dom.json}
+[3] PARSE        parse.py [--mode account|bookmarks] → <handle>-harvest-<date>.json  (+ completeness report)
+[4] CONSUME      ingest_corpus.py [--mode account|bookmarks] → vault markdown   (optional)
 ```
 
 Stage 2 is the craft. Stages 3-4 are deterministic scripts (`scripts/`). Everything writes to `~/.dev-browser/tmp/` (dev-browser's only writable dir) until parse pulls it out.
@@ -48,9 +49,16 @@ EOF
 
 If `loggedIn:false`, **stop and tell the operator to log in manually** in the headful window, then wait for their confirmation before Stage 2. Never script credentials — there is no secret-injection primitive, and typing a password lands it in the transcript. Reuse this page; do not re-navigate to login once in.
 
+**Windows Chrome 151+ attach (bookmarks, or when Chrome-for-Testing is login-limited):** `--remote-debugging-port` is ignored on the *default* profile. Chrome-for-Testing often hits “We've temporarily limited your login.” Do **not** script a password into that window. Two working paths:
+
+1. Operator enables `chrome://inspect/#remote-debugging` in the Chrome they are already logged into, then `dev-browser --connect` (no URL). Named pages do **not** persist across `--connect` invocations — keep Stage 2 in **one** script, or `listPages()` each time.
+2. Copy the logged-in profile into a *non-default* `--user-data-dir`, launch `chrome.exe --user-data-dir=<copy> --remote-debugging-port=9222 --remote-allow-origins=*`, then `dev-browser --connect http://127.0.0.1:9222`. Cookie copies into a fresh dir often drop the X session — if the copy is walled, the operator logs in *in that attached window*.
+
+Do not combine `--connect` with the `run` subcommand (the flag swallows it). Pipe the script or use a here-string. QuickJS teardown may exit 1 or 4 *after* stdout — treat the summary line + `tsnet_*.json` as success.
+
 ---
 
-## Stage 2 — capture the four surfaces
+## Stage 2 — capture the surfaces
 
 **Never trust one surface.** On the reference harvest, search found 76, profile-scroll found 191, and the Articles tab held 25 long-form pieces *neither* showed. Completeness is a **superset** of all four, cross-checked. Run all of them; the parse stage reconciles.
 
@@ -60,6 +68,8 @@ Full, ready-to-fill scripts (substitute `{{HANDLE}}`, `{{SINCE}}`, `{{UNTIL}}`, 
 2. **Profile scroll** — the timeline back to `{{CUTOFF}}`. DOM inventory; catches what search drops.
 3. **Profile scroll + network listener** ← **the load-bearing pass** (below). DOM scroll *drives* the GraphQL loads; the listener captures the full-fidelity payloads.
 4. **Articles** — the `/articles` tab list, then each article's full rich-text (Articles never appear in tweet payloads).
+
+**Bookmarks (logged-in operator only, skip 1–4):** one network pass on the Bookmarks tab. Current UI: `https://x.com/i/bookmarks` lands on `https://x.com/i/history` with the **Bookmarks** tab selected (next to Likes). GraphQL op (2026-08): `Bookmarks`. Capture script is surface **5** in `references/capture-scripts.md`. DOM inventory = every `article[data-testid="tweet"]` (other people's posts — do **not** filter to a handle). Write `ts_bm_dom.json`. Then `parse.py --mode bookmarks` (does not drop non-handle tweets).
 
 ### The network pass — THE technique
 
@@ -74,7 +84,7 @@ page.on("response", async (res) => {
     if (/graphql\/[^\/]+\/(UserByScreenName|UserByRestId)/.test(u)) {   // the profile/bio payload
       await writeFile("tsuser_" + String(++userChunk).padStart(3, "0") + ".json", await res.text()); return;
     }
-    if (!/graphql\/[^\/]+\/(UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail)/.test(u)) return;
+    if (!/graphql\/[^\/]+\/(UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail|Bookmarks)/.test(u)) return;
     await writeFile("tsnet_" + String(++chunk).padStart(3, "0") + ".json", await res.text());
   } catch (e) { console.log("resp: " + e.message.slice(0, 60)); }
 });
@@ -93,9 +103,9 @@ X throttles aggressive scrolling. Signatures and responses:
 - **Timeline won't render (0 tweets after ~15 waits)** → prepend a **180s cooldown** (`await page.waitForTimeout(180000)`) and run the pass in the background (`run_in_background: true`) so the wall clock doesn't kill it.
 - Pace between article fetches 4.5–8s. `waitUntil:"commit"` always — `networkidle`/`domcontentloaded` hang on X.
 
-### dev-browser exit code 4 is cosmetic
+### dev-browser exit code 4 (or 1) is cosmetic
 
-A QuickJS teardown assertion (`list_empty(&rt->gc_obj_list)`) throws exit 4 *after* the script's work. **Read stdout first** — if the summary line printed and the `tsnet_*.json` files exist, the capture succeeded. Never re-run on exit-4 alone.
+A QuickJS teardown assertion (`list_empty(&rt->gc_obj_list)`) throws exit 4 or 1 *after* the script's work. **Read stdout first** — if the summary line printed and the `tsnet_*.json` files exist, the capture succeeded. Never re-run on that assertion alone.
 
 ---
 
@@ -105,12 +115,15 @@ A QuickJS teardown assertion (`list_empty(&rt->gc_obj_list)`) throws exit 4 *aft
 python ~/.claude/skills/x-harvest/scripts/parse.py \
   --handle {{HANDLE}} --cutoff {{CUTOFF}} \
   --out ./{{HANDLE}}-harvest-<date>.json \
+  [--mode account|bookmarks] \
   [--known-ids path/to/known_ids.txt]
 ```
 
 Reads every `~/.dev-browser/tmp/tsnet_*.json` + `ts_article_*.json` + `tsuser_*.json`, walks the payloads (`rest_id`+`legacy` nodes), extracts full text / threads / quotes / media / article bodies + the account **`profile`** (bio, metrics, join date, pinned, links), groups self-reply threads by `conversation_id`, drops retweets and (optionally) `known_ids`, and emits the **one normalized artifact** every consumer reads.
 
-**Completeness gate (do not skip):** parse also reconciles the network ids against the DOM inventories (`ts_slice*.json`, `ts_profile*.json`) and prints `missing_from_net: [...]`. **A non-trivial miss list means the network pass didn't cover everything the DOM saw — scroll further or re-run pass 3 before consuming.** An empty miss list is the proof the harvest is a true superset.
+`--mode bookmarks` (default remains `account`): keep every author's tweets, skip the handle filter, skip the cutoff unless you pass one, reconcile against `ts_bm_dom.json`.
+
+**Completeness gate (do not skip):** parse also reconciles the network ids against the DOM inventories (`ts_slice*.json`, `ts_profile*.json`, `ts_bm_dom.json`) and prints `missing_from_net: [...]`. **A non-trivial miss list means the network pass didn't cover everything the DOM saw — scroll further or re-run the network pass before consuming.** An empty miss list is the proof the harvest is a true superset.
 
 ---
 
@@ -122,7 +135,8 @@ The reference consumer writes the Obsidian-vault corpus (frontmatter + `<handle>
 python ~/.claude/skills/x-harvest/scripts/ingest_corpus.py \
   --harvest ./{{HANDLE}}-harvest-<date>.json \
   --operator {{HANDLE}} --corpus /path/to/vault/corpus/ \
-  --batch <date>
+  --batch <date> \
+  [--mode account|bookmarks]
 ```
 
 Any other consumer (CSV, a prospect-research digest, JSONL) reads the same normalized JSON — **never re-scrape to change output format.** That split is the whole point of the two layers.
@@ -143,7 +157,10 @@ A re-run is a first run with a `known_ids.txt` (one id per line — the ingest s
 | Trust the search tab alone | Harvest search + profile + articles; reconcile to a superset |
 | Treat truncated tweet text as the full post | Read `note_tweet` from the payload (untruncated) |
 | Script the X login | Manual login on the persistent `xharvest` page; wait for the operator |
-| Re-run on dev-browser exit code 4 | Read stdout — data was written before the teardown assertion |
+| Re-run on dev-browser exit code 4 or 1 (QuickJS teardown) | Read stdout — data was written before the teardown assertion |
+| Filter bookmark tweets to one handle | Bookmarks are other people's posts; `--mode bookmarks` keeps every author |
+| Log in through Chrome for Testing | Attach to the operator's real Chrome (`--connect`) or a copied `--user-data-dir` |
+| Combine `--connect` with `dev-browser run` | Pipe the script / here-string; `run` is swallowed |
 | Push on when `netChunks:0` | Run `references/graphql-recovery.md`; X renamed the operations |
 | `waitUntil:"networkidle"` | `waitUntil:"commit"` — X never goes idle |
 | Hammer through a rate-limit | Click Retry, add the 180s cooldown, background the run |
@@ -155,7 +172,7 @@ A re-run is a first run with a `known_ids.txt` (one id per line — the ingest s
 
 | File | What |
 |---|---|
-| `references/capture-scripts.md` | The full 4-surface dev-browser capture scripts (fill placeholders, run) |
+| `references/capture-scripts.md` | The 4-surface account scripts plus surface 5 (Bookmarks) |
 | `references/graphql-recovery.md` | When X renames its GraphQL operations: re-discover and re-patch |
 | `references/corpus-schema.md` | The vault-corpus consumer's frontmatter + filename spec |
 | `scripts/parse.py` | Stage 3 — payloads → normalized JSON + completeness report |

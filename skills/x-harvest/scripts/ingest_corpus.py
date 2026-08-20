@@ -10,6 +10,7 @@ reading the SAME harvest JSON; do not re-scrape.
 Usage:
   python ingest_corpus.py --harvest HANDLE-harvest-DATE.json --operator HANDLE
                           --corpus /path/to/vault/corpus/ --batch YYYY-MM-DD
+                          [--mode account|bookmarks]
                           [--known-ids known_ids.txt] [--dry-run]
 """
 import argparse, io, json, os, re, sys
@@ -54,9 +55,11 @@ def main():
     ap.add_argument("--operator", required=True, help="account handle for frontmatter")
     ap.add_argument("--corpus", required=True, help="output corpus directory")
     ap.add_argument("--batch", required=True, help="ingest/refresh batch date YYYY-MM-DD")
+    ap.add_argument("--mode", choices=("account", "bookmarks"), default="account")
     ap.add_argument("--known-ids", default=None, help="ids to skip + append newly written")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    bookmarks = a.mode == "bookmarks"
 
     data = json.load(open(a.harvest, encoding="utf-8"))
     op = a.operator.lower().lstrip("@")
@@ -88,13 +91,20 @@ def main():
         typ = "thread" if kind == "thr" else "tweet"
         date8 = dt[:10].replace("-", "")
         media = u.get("media", [])
+        author = (u.get("author") or op)
         # media-only single tweet
         if kind == "tw" and not (u["text"] or "").strip() and media:
             typ, kind = "tweet-media-only", "tw"
-        name = f"{op}-{kind}-{slugify(u['text'])}-{date8}-{rid[-6:]}.md"
+        if bookmarks:
+            name = f"bm-{author}-{slugify(u['text'])}-{date8}-{rid[-6:]}.md"
+            src, src_url = "twitter-bookmark", f"https://x.com/{author}/status/{rid}"
+        else:
+            name = f"{op}-{kind}-{slugify(u['text'])}-{date8}-{rid[-6:]}.md"
+            src, src_url = "twitter", f"https://x.com/{op}/status/{rid}"
         front = fm([
-            ("operator", op), ("source", "twitter"),
-            ("source_url", f"https://x.com/{op}/status/{rid}"),
+            ("operator", op), ("source", src),
+            ("source_url", src_url),
+            ("author", author),
             ("source_id", rid), ("date_posted", dt[:10]), ("date_ingested", a.batch),
             ("is_reply", False), ("contains_image", bool(media)), ("images", media),
             ("thread_tweet_ids", u["tweet_ids"] if len(u["tweet_ids"]) > 1 else []),
@@ -139,7 +149,7 @@ def main():
 
     # profile: current-state, so it OVERWRITES on refresh (unlike immutable posts)
     p = data.get("profile")
-    if p and p.get("handle"):
+    if p and p.get("handle") and not bookmarks:
         front = fm([
             ("operator", op), ("source", "twitter-profile"),
             ("source_url", f"https://x.com/{op}"), ("source_id", p.get("id")),

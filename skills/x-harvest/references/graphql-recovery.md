@@ -25,10 +25,10 @@ console.log(JSON.stringify([...ops].sort()));
 EOF
 ```
 
-Look for the timeline operations — historically `UserTweets`, `UserTweetsAndReplies`, `SearchTimeline`, `TweetDetail` — and the **profile** operation, historically `UserByScreenName` (or `UserByRestId`), which fires once on the profile `goto`. Whatever the current names are, update the regex in **both** `references/capture-scripts.md` (surface 3) and the listener snippet in `SKILL.md`:
+Look for the timeline operations — historically `UserTweets`, `UserTweetsAndReplies`, `SearchTimeline`, `TweetDetail`, and for Bookmarks `Bookmarks` — and the **profile** operation, historically `UserByScreenName` (or `UserByRestId`), which fires once on the profile `goto`. Bookmarks recovery: `goto https://x.com/i/bookmarks`, click the Bookmarks tab if the History view is showing Likes, dump ops. Whatever the current names are, update the regex in **both** `references/capture-scripts.md` (surfaces 3 and 5) and the listener snippet in `SKILL.md`:
 
 ```js
-if (!/graphql\/[^\/]+\/(NewName1|NewName2|SearchTimeline|TweetDetail)/.test(res.url())) return;
+if (!/graphql\/[^\/]+\/(NewName1|NewName2|SearchTimeline|TweetDetail|Bookmarks)/.test(res.url())) return;
 ```
 
 Re-run the capture. Confirm `tsnet_*.json` files now appear.
