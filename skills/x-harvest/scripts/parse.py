@@ -9,6 +9,7 @@ reports any ids the DOM saw but the network capture missed (the completeness gat
 
 Usage:
   python parse.py --handle HANDLE --cutoff YYYY-MM-DD --out out.json
+                  [--mode account|bookmarks]
                   [--tmp ~/.dev-browser/tmp] [--known-ids known_ids.txt]
 
 The structural walk() survives most of X's re-nesting. If extraction yields far
@@ -188,7 +189,7 @@ def load_profile(tmp, handle):
 def load_dom_ids(tmp):
     """Every id the DOM passes saw — the completeness baseline."""
     ids = {}
-    for pat in ("ts_slice*.json", "ts_profile.json", "ts_profile_dom2.json"):
+    for pat in ("ts_slice*.json", "ts_profile.json", "ts_profile_dom2.json", "ts_bm_dom.json"):
         for f in glob.glob(os.path.join(tmp, pat)):
             try:
                 for t in json.load(open(f, encoding="utf-8")):
@@ -201,13 +202,18 @@ def load_dom_ids(tmp):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--handle", required=True, help="account handle, no @")
-    ap.add_argument("--cutoff", required=True, help="oldest date to keep, YYYY-MM-DD")
+    ap.add_argument("--handle", required=True, help="account handle, no @ (operator id for bookmarks)")
+    ap.add_argument("--cutoff", default=None, help="oldest date to keep, YYYY-MM-DD (required for --mode account)")
+    ap.add_argument("--mode", choices=("account", "bookmarks"), default="account")
     ap.add_argument("--out", required=True, help="normalized JSON output path")
     ap.add_argument("--tmp", default=os.path.expanduser("~/.dev-browser/tmp"))
     ap.add_argument("--known-ids", default=None, help="ids to skip (incremental refresh)")
     a = ap.parse_args()
     handle = a.handle.lower().lstrip("@")
+    bookmarks = a.mode == "bookmarks"
+    if not bookmarks and not a.cutoff:
+        ap.error("--cutoff is required unless --mode bookmarks")
+    cutoff = a.cutoff or "1970-01-01"
 
     tweets = {}
     payloads = sorted(glob.glob(os.path.join(a.tmp, "tsnet_*.json")))
@@ -228,9 +234,12 @@ def main():
                 tweets[e["id"]] = e
     print(f"payloads: {len(payloads)} | unique tweet objects: {len(tweets)}")
 
-    own = {i: t for i, t in tweets.items() if t["author"].lower() == handle and not t["retweeted"]}
-    inwin = {i: t for i, t in own.items() if t["dt"] and t["dt"][:10] >= a.cutoff}
-    print(f"own non-RT: {len(own)} | in window (>= {a.cutoff}): {len(inwin)}")
+    if bookmarks:
+        own = {i: t for i, t in tweets.items() if not t["retweeted"]}
+    else:
+        own = {i: t for i, t in tweets.items() if t["author"].lower() == handle and not t["retweeted"]}
+    inwin = {i: t for i, t in own.items() if t["dt"] and t["dt"][:10] >= cutoff}
+    print(f"{'bookmarks' if bookmarks else 'own'} non-RT: {len(own)} | in window (>= {cutoff}): {len(inwin)}")
 
     known = set()
     if a.known_ids and os.path.exists(a.known_ids):
@@ -241,13 +250,15 @@ def main():
     # thread grouping: self-replies under their conversation root
     continuations = {}
     for t in fresh.values():
-        if t["reply_to_id"] and (t["reply_to_user"] or "").lower() == handle:
+        same = (t["reply_to_user"] or "").lower() == (t["author"] or "").lower() if bookmarks else (t["reply_to_user"] or "").lower() == handle
+        if t["reply_to_id"] and same:
             continuations.setdefault(t["conversation_id"], []).append(t["id"])
 
     units = []
     used = set()
     for i, t in fresh.items():
-        if i in used or (t["reply_to_id"] and (t["reply_to_user"] or "").lower() == handle):
+        fold = (t["reply_to_user"] or "").lower() == (t["author"] or "").lower() if bookmarks else (t["reply_to_user"] or "").lower() == handle
+        if i in used or (t["reply_to_id"] and fold):
             continue  # continuations are folded into their root
         chain_ids = [i] + [c for c in continuations.get(t["conversation_id"] or "", []) if c != i and c in inwin]
         chain = sorted((inwin[c] for c in chain_ids), key=lambda x: x["dt"] or "")
@@ -282,7 +293,7 @@ def main():
     # completeness reconciliation
     dom = load_dom_ids(a.tmp)
     net_ids = set(inwin.keys())
-    dom_inwin = {i for i, dt in dom.items() if not dt or dt[:10] >= a.cutoff}
+    dom_inwin = {i for i, dt in dom.items() if not dt or dt[:10] >= cutoff}
     missing = sorted(dom_inwin - net_ids - known)
     net_only = sorted(net_ids - set(dom.keys()))
     print(f"COMPLETENESS: net_ids={len(net_ids)} dom_ids(in-win)={len(dom_inwin)} "
@@ -300,7 +311,7 @@ def main():
         print("profile: none captured (no tsuser_*.json — add UserByScreenName to the pass-3 listener)")
 
     out = {
-        "handle": handle, "cutoff": a.cutoff,
+        "handle": handle, "mode": a.mode, "cutoff": None if bookmarks and not a.cutoff else cutoff,
         "profile": profile,
         "counts": {"units": len(units), "articles": len(articles),
                    "threads": sum(1 for u in units if u["kind"] == "thread")},

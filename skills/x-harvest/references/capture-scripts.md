@@ -1,7 +1,7 @@
-# Capture scripts — the four surfaces
+# Capture scripts — the four account surfaces plus Bookmarks
 
 ## Contents
-Placeholders · 1 Search slices · 2 Profile scroll (DOM) · 3 Profile scroll + network capture (load-bearing) · 4a Articles list · 4b Article full-text
+Placeholders · 1 Search slices · 2 Profile scroll (DOM) · 3 Profile scroll + network capture (load-bearing) · 4a Articles list · 4b Article full-text · 5 Bookmarks (logged-in operator)
 
 Fill the placeholders, run each via the Bash tool as a `dev-browser` heredoc on the persistent `xharvest` page. All output lands in `~/.dev-browser/tmp/`. Run in order; the parse stage reconciles them.
 
@@ -133,7 +133,7 @@ page.on("response", async (res) => {
       await writeFile("tsuser_" + String(++userChunk).padStart(3, "0") + ".json", await res.text());
       return;
     }
-    if (!/graphql\/[^\/]+\/(UserOriginalsTimeline|UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail)/.test(u)) return;
+    if (!/graphql\/[^\/]+\/(UserOriginalsTimeline|UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail|Bookmarks)/.test(u)) return;
     await writeFile("tsnet_" + String(++chunk).padStart(3, "0") + ".json", await res.text());
   } catch (e) { console.log("resp: " + e.message.slice(0, 60)); }
 });
@@ -249,5 +249,74 @@ for (const item of list) {
   await page.waitForTimeout(4500 + Math.floor(Math.random() * 3500));
 }
 console.log(JSON.stringify(done, null, 1));
+EOF
+```
+
+---
+
+## 5 — Bookmarks (logged-in operator)
+
+Skip surfaces 1–4. Harvests the **current user's** saved posts, not `{{HANDLE}}`'s timeline.
+
+Current UI (2026-08): `https://x.com/i/bookmarks` redirects to `https://x.com/i/history` with the **Bookmarks** tab selected (beside Likes). GraphQL op: `Bookmarks`. DOM inventory is every `article[data-testid="tweet"]` — **do not** filter to a handle.
+
+If using `--connect` (Windows Chrome 151+), keep this whole pass in **one** script: named pages do not persist. Resolve the tab with `listPages()` if `getPage("xharvest")` is a blank page.
+
+Then: `python parse.py --mode bookmarks --handle {{HANDLE}} --out ./{{HANDLE}}-bookmarks-<date>.json` (`--cutoff` optional).
+
+```bash
+dev-browser --timeout 900 <<'EOF'
+const page = await browser.getPage("xharvest");
+let chunk = 0;
+page.on("response", async (res) => {
+  try {
+    if (res.status() !== 200) return;
+    const u = res.url();
+    const m = u.match(/graphql\/[^/]+\/([A-Za-z0-9]+)/);
+    if (!m) return;
+    if (m[1] === "Bookmarks" || m[1] === "TweetDetail") {
+      await writeFile("tsnet_" + String(++chunk).padStart(3, "0") + ".json", await res.text());
+    }
+  } catch (e) { console.log("resp: " + e.message.slice(0, 60)); }
+});
+await page.goto("https://x.com/i/bookmarks", { waitUntil: "commit", timeout: 60000 }).catch(e => console.log("nav: " + e.message.slice(0,80)));
+await page.waitForTimeout(4000);
+const bm = page.getByRole("tab", { name: /bookmarks/i });
+if (await bm.count()) await bm.first().click().catch(()=>{});
+await page.waitForTimeout(2500);
+const acc = {}; let stale = 0, ticks = 0;
+while (stale < 8 && ticks < 220) {
+  ticks++;
+  const broken = await page.evaluate(() => document.body.innerText.includes("Something went wrong")).catch(() => false);
+  if (broken) {
+    const r = page.getByRole("button", { name: /retry/i });
+    if (await r.count()) await r.first().click().catch(()=>{});
+    await page.waitForTimeout(2500);
+  }
+  const batch = await page.evaluate(() => {
+    const out = [];
+    for (const art of document.querySelectorAll('article[data-testid="tweet"]')) {
+      const link = Array.from(art.querySelectorAll('a[href*="/status/"]')).find(a => a.querySelector("time"));
+      if (!link) continue;
+      const m = link.getAttribute("href").match(/status\/(\d+)/); if (!m) continue;
+      const txt = art.querySelector('div[data-testid="tweetText"]');
+      out.push({ id: m[1], href: link.getAttribute("href"),
+        dt: link.querySelector("time") ? link.querySelector("time").getAttribute("datetime") : null,
+        text: txt ? txt.innerText.slice(0, 180) : "" });
+    }
+    return out;
+  }).catch(() => []);
+  let fresh = 0;
+  for (const t of batch) if (!acc[t.id]) { acc[t.id] = t; fresh++; }
+  stale = fresh === 0 ? stale + 1 : 0;
+  if (ticks % 20 === 0) await writeFile("ts_bm_dom.json", JSON.stringify(Object.values(acc), null, 1));
+  await page.mouse.wheel(0, 2000 + Math.floor(Math.random() * 600));
+  await page.waitForTimeout(1000 + Math.floor(Math.random() * 500));
+  if (ticks % 20 === 0) await page.waitForTimeout(3000);
+}
+await page.waitForTimeout(3500);
+const items = Object.values(acc);
+await writeFile("ts_bm_dom.json", JSON.stringify(items, null, 1));
+console.log(JSON.stringify({ done: true, url: page.url(), ticks, stale, domIds: items.length, netChunks: chunk }));
 EOF
 ```

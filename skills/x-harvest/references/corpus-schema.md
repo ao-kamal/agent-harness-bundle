@@ -8,7 +8,13 @@ The reference consumer (`scripts/ingest_corpus.py`) renders the normalized harve
 <operator>-{tw|thr|art}-<slug>-<YYYYMMDD>-<last6ofRootId>.md
 ```
 
-- `tw` single tweet · `thr` thread · `art` Article
+Bookmarks (`--mode bookmarks`):
+
+```
+bm-<author>-<slug>-<YYYYMMDD>-<last6ofRootId>.md
+```
+
+- `tw` single tweet · `thr` thread · `art` Article · `bm` a saved post by someone else
 - `<slug>` — first ~55 chars of the text, lowercased, non-alphanumerics → `-`, URLs stripped
 - date is the post's `date_posted`; the id suffix guarantees uniqueness across same-day, same-slug posts
 
@@ -18,9 +24,10 @@ Example: `termsheetinator-thr-your-biggest-competitor-has-no-website-20260630-28
 
 ```yaml
 ---
-operator: 'termsheetinator'        # the account harvested (= --operator)
-source: 'twitter'                  # or 'twitter-article' for Articles
+operator: 'example-handle'        # the account harvested (= --operator)
+source: 'twitter'                  # or 'twitter-article' / 'twitter-bookmark'
 source_url: 'https://x.com/<operator>/status/<root_id>'
+author: '<handle>'                 # bookmarks: the tweet author, not the operator
 source_id: '<root_id>'
 date_posted: 'YYYY-MM-DD'
 date_ingested: 'YYYY-MM-DD'        # = --batch
