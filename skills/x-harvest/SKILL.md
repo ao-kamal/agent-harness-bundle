@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 > **Core insight:** X's own frontend receives every tweet as a GraphQL JSON payload. Capture *those* — not the DOM — and virtualization can't hide rows, long text isn't truncated, and threads/quotes/media arrive structured. The DOM is only a scroll motor and a completeness check.
 
-Harvest any public X account into a **normalized JSON** artifact (the universal output), then optionally render it to an Obsidian-vault markdown corpus (one consumer). Proven on a 253-post reference corpus (posts across tweets, threads, and 25 Articles invisible to search).
+Harvest any public X account into a **normalized JSON** artifact (the universal output), then optionally render it to an Obsidian-vault markdown corpus (one consumer). Proven on the termsheetinator corpus (253 posts across tweets, threads, and 25 Articles invisible to search).
 
 **Platform:** dev-browser must run **headful** (X login needs a real window). On Windows call `dev-browser` directly; from WSL call the Windows `.exe`. Depends on the **dev-browser** skill — load it if you haven't.
 
@@ -74,7 +74,7 @@ page.on("response", async (res) => {
     if (/graphql\/[^\/]+\/(UserByScreenName|UserByRestId)/.test(u)) {   // the profile/bio payload
       await writeFile("tsuser_" + String(++userChunk).padStart(3, "0") + ".json", await res.text()); return;
     }
-    if (!/graphql\/[^\/]+\/(UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail)/.test(u)) return;
+    if (!/graphql\/[^\/]+\/(UserOriginalsTimeline|UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail)/.test(u)) return;
     await writeFile("tsnet_" + String(++chunk).padStart(3, "0") + ".json", await res.text());
   } catch (e) { console.log("resp: " + e.message.slice(0, 60)); }
 });

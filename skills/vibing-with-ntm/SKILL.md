@@ -105,6 +105,8 @@ Before acting on any "pane is stuck / rate-limited / done / idle" judgment, veri
 
 If any two layers disagree, resync before acting. See OBSERVABILITY.md → "Liveness Signals That Can Lie" for the full catalog (timer labels, `⏵⏵ bypass` authoritativeness, codex placeholder suggestions, tmux window-index discovery, disk trajectory, "degraded ≠ broken").
 
+> **The pane TIMER is not a stuck signal — it is cumulative turn time across many tool calls.** A pane showing "Cogitated 40m" can be deep in productive work (dozens of `Edit`/`Bash`/test calls in a single long turn) with no commit *yet* — so `git log`/`pgrep` (Truth-Stack step 3) show nothing and the timer looks alarming, but the pane is fine. Before interrupting ANY long-running pane, read its **transcript's recent tool calls** — the authoritative per-pane *in-turn* productivity signal the other layers miss: `python3` over the newest `*.jsonl` under `~/.claude/projects/<encoded-project>/`, dumping the last ~10 `tool_use` names+inputs (`Edit`/`Write`/`Bash`/`br`...). Fresh tool calls = PRODUCTIVE → **leave it alone**. Only ZERO new tool calls across a full tick interval = genuinely wedged. **Never `Escape`/interrupt a pane that is making tool calls, regardless of the timer** — the interrupt ends the turn and throws away real mid-implementation work (edits, test iterations). This is a real, expensive operator mistake; the timer alone has caused productive 40-min turns (Vercel/Neon provisioning, multi-file test edits) to be wrongly killed.
+
 # Vibing With NTM
 
 > **Core flow:** understand the repo -> pick work intelligently -> coordinate explicitly -> keep agents moving -> review relentlessly.

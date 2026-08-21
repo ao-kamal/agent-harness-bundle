@@ -1,6 +1,17 @@
 ---
 name: dev-browser
-description: Drive the dev-browser CLI to control a real browser from a script, right now — not to write test code the user runs elsewhere, and not for pure HTTP status/header/redirect checks (those are a plain fetch/curl job). Use when you need to see how a page renders (screenshots, layout, sizing, fonts, visual verification), act on a page (click, fill, navigate, log in), read JS-rendered/SPA/hydrated content that a plain fetch can't see, work inside the user's logged-in session, or scrape a site that blocked firecrawl/fetch. Trigger phrases include "go to [url]", "click", "fill out the form", "take a screenshot", "verify it looks right", "scrape", "log into", "test the site", or "check it in a real browser". Also reach for it when firecrawl/WebFetch/curl returns a 403, a block, or an empty JS shell.
+description: >-
+  Drives the dev-browser CLI against official Chrome or Playwright Chromium
+  from a sandboxed script. Use when you need screenshots, layout checks,
+  clicks, fills, JS-rendered pages, a logged-in session, or a site that
+  blocked firecrawl/fetch. Use when Google shows "this browser or app may
+  not be secure", or the user says official Chrome, isolated profile, GBP,
+  GSC, or GA4 login. Human types the Google password in official chrome.exe
+  on the isolated chrome-profile under ~/.dev-browser/browsers/ with no debug
+  flags; do not type that password in a --channel chrome window. Not for
+  writing Playwright test files or raw HTTP status/header checks. Trigger
+  phrases: go to a url, click, screenshot, scrape, check it in a real
+  browser, browser may not be secure.
 ---
 
 # dev-browser
@@ -96,6 +107,28 @@ Rules that prevent most timeouts:
 - **Poll for content stability** (innerText length unchanged N polls in a row) instead of a guessed `waitForTimeout(N)`. Full recipe in [references/recipes.md](references/recipes.md).
 - Read printed stdout before assuming a timed-out run failed — the data may have already logged.
 
+## Launch mode
+
+Terms (use these; do not invent synonyms):
+
+- **official Chrome** = `chrome.exe` from Program Files. Not Chrome for Testing.
+- **isolated profile** = `~/.dev-browser/browsers/<name>/chrome-profile`. Not daily **Profile 1**.
+- Avoid: "real Chrome", "my Chrome", "the user's Chrome".
+
+| Flag | Process | Profile | Google password step |
+|---|---|---|---|
+| default `--browser <name>` | Playwright Chromium | `~/.dev-browser/browsers/<name>/chromium-profile` | Blocked |
+| `--channel chrome` | official Chrome + CDP (debug port on) | isolated profile | Blocked. Sign in first. |
+| `--connect` | attach to an already-running Chrome | that window's profile | Only if already signed in |
+
+Google Account (GBP / GSC / GA4 / GTM) is two phases. Recipe: [references/recipes.md](references/recipes.md#official-chrome-google-sign-in). Write-up: `ObsidianVault/References/google-signin-official-chrome.md`. Do not hand off to `browser-extension-automation` for this.
+
+**Done when:** the isolated window shows the Google account (or GBP) and does **not** show "This browser or app may not be secure". Then close that window (cookies stay) or enable `chrome://inspect/#remote-debugging`. Only then run `--channel chrome`.
+
+`--channel msedge` is the Edge sibling. Do not retry `ignoreDefaultArgs` / `AutomationControlled` / hide-`webdriver` (commit `09615f7`, failed).
+
+`--connect` does not persist named pages across invocations. Do not run `dev-browser install-skill` (removed; it overwrote this skill).
+
 ## State & concurrency
 
 - **Named pages persist across invocations** in default (launched) mode: `getPage("checkout")` returns the same tab next script — reuse it, don't re-navigate or re-log-in. (A timeout-killed script can leave the page reset to `about:blank` — if a reused page is unexpectedly blank, re-`goto` before acting.)
@@ -132,19 +165,21 @@ dev-browser drives the user's **real, already-authenticated** browser — a wron
 
 | Don't | Do |
 |---|---|
-| Hand the user manual steps for something dev-browser can do in their logged-in session | Drive it yourself |
+| Type the Google password in `--channel chrome` or Playwright | Phase 1 recipe: detached official Chrome, no debug flags; human types it |
+| `Start-Process` a second Chrome with `--remote-debugging-port` after sign-in | Close the sign-in window or enable inspect, then `--channel chrome` |
+| Hand the user manual steps for something already signed-in that the CLI can click | Drive it yourself |
 | Accept a firecrawl/fetch 403 as final | Escalate to dev-browser headful — a block is *unverified*, not *rejected* |
 | `page.evaluate()` to find/click/scroll | Locator (`getByRole`/`getByText`) — down the ladder only as each rung fails |
 | Escalate `--timeout` when a `goto`/`click` keeps hitting "30000ms exceeded" | Pass `{ timeout }` on that action — it's a different clock |
 | `waitUntil: "networkidle"` on a live site | `"domcontentloaded"` |
 | Fire N dev-browser calls in parallel; run global `dev-browser stop` in a swarm | Loop in one script; per-agent `--browser <name>`; never global stop |
-| Reinstall Playwright / reach for raw `fetch` before trying dev-browser | dev-browser is already installed and working — `--help`, then a script |
+| Reinstall Playwright / reach for raw `fetch` before trying dev-browser | `--help`, then a script |
 
 ## Gotchas & workarounds
 
 - **WSL:** the npm shim errors "Native binary not found for linux-x64" — call the Windows `.exe` directly; run **headful** (headless fails over the interop hop). See [references/troubleshooting.md](references/troubleshooting.md).
 - **Exit code 1 absorbs every failure class** (timeout, sandbox, daemon, launch) — read the stderr *text*, not just the code.
-- **Version-specific bugs** in the installed build (per-instance stop missing, no `--json`, `addInitScript` broken, stale `cua.click` nav docs) are catalogued in [references/workarounds-0.2.8.md](references/workarounds-0.2.8.md) — delete entries there as upstream fixes land.
+- **Still-open installed-build gaps** (`addInitScript`, `getPage` typo blanks, `cua.click` wait) live in [references/workarounds-0.2.8.md](references/workarounds-0.2.8.md). Delete a row when its fix is on the installed exe.
 - **PDFs** don't render reliably for screenshotting — use an external `pdftoppm`/`pymupdf` pipeline.
 
 ## Quick checklist
@@ -167,4 +202,4 @@ dev-browser drives the user's **real, already-authenticated** browser — a wron
 | Installed-version bugs to route around (delete as fixed) | [references/workarounds-0.2.8.md](references/workarounds-0.2.8.md) |
 | Related: swarm orchestration | `browser-testing-with-ntm` skill |
 
-*Built from 383 mined real-session incidents — the evidence base is a `References/dev-browser-taxonomy/` note collection (23 failure clusters) + `.firecrawl/dev-browser-research/leading-edge-practices.md`.*
+*Built from 383 mined real-session incidents — the evidence base is `ObsidianVault/References/dev-browser-taxonomy/` (23 failure clusters) + `.firecrawl/dev-browser-research/leading-edge-practices.md`.*

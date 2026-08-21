@@ -6,7 +6,7 @@ Placeholders · 1 Search slices · 2 Profile scroll (DOM) · 3 Profile scroll + 
 Fill the placeholders, run each via the Bash tool as a `dev-browser` heredoc on the persistent `xharvest` page. All output lands in `~/.dev-browser/tmp/`. Run in order; the parse stage reconciles them.
 
 **Placeholders**
-- `{{HANDLE}}` — the account, no `@` (e.g. `example-handle`)
+- `{{HANDLE}}` — the account, no `@` (e.g. `termsheetinator`)
 - `{{SINCE}}` / `{{UNTIL}}` — per search slice, `YYYY-MM-DD` (keep slices ~monthly so none exceeds the scroll ceiling)
 - `{{CUTOFF}}` — oldest date to harvest back to, `YYYY-MM-DD`
 
@@ -133,7 +133,7 @@ page.on("response", async (res) => {
       await writeFile("tsuser_" + String(++userChunk).padStart(3, "0") + ".json", await res.text());
       return;
     }
-    if (!/graphql\/[^\/]+\/(UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail)/.test(u)) return;
+    if (!/graphql\/[^\/]+\/(UserOriginalsTimeline|UserTweets|UserTweetsAndReplies|SearchTimeline|TweetDetail)/.test(u)) return;
     await writeFile("tsnet_" + String(++chunk).padStart(3, "0") + ".json", await res.text());
   } catch (e) { console.log("resp: " + e.message.slice(0, 60)); }
 });

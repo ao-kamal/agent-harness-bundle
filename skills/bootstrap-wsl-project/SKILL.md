@@ -79,7 +79,7 @@ If the loop walks more than one level, the operator must run from the **deepest 
 ## THE EXACT PROMPT — manual interactive bootstrap (operator-side)
 
 ```bash
-cd /mnt/c/Users/<you>/Documents/MyProject
+cd /mnt/c/Users/USER/Documents/MyProject
 # 1. Detect project type:
 ls pyproject.toml Cargo.toml package.json 2>/dev/null
 # 2. Pick hot-dirs from the table above based on what's present (NEVER include .beads/ — see Anti-Patterns)
@@ -95,7 +95,7 @@ grep -E '^/?(\.venv|\.pytest_cache)$' .gitignore
 ## THE EXACT PROMPT — manual scripted bootstrap (no prompts)
 
 ```bash
-cd /mnt/c/Users/<you>/Documents/MyProject
+cd /mnt/c/Users/USER/Documents/MyProject
 init-fast-data .venv .pytest_cache
 # Idempotent — safe to re-run; already-symlinked dirs are skipped (with target validation).
 # DO NOT include .beads/ — git refuses to traverse symlinks; see Anti-Patterns.

@@ -25,7 +25,7 @@
 The linux npm shim doesn't work. Call the Windows binary via interop:
 
 ```
-/mnt/c/Users/<you>/AppData/Roaming/npm/node_modules/dev-browser/bin/dev-browser-windows-x64.exe
+/mnt/c/Users/USER/AppData/Roaming/npm/node_modules/dev-browser/bin/dev-browser-windows-x64.exe
 ```
 
 - Run **headful** (headless fails over the interop hop).

@@ -7,6 +7,7 @@ Copy-paste code shapes proven in the field. All run inside `dev-browser --timeou
 - [Content-stability settle loop](#content-stability-settle-loop)
 - [File upload via canvas-inject](#file-upload-via-canvas-inject)
 - [Scroll-reveal pages that screenshot blank](#scroll-reveal)
+- [Official Chrome Google sign-in](#official-chrome-google-sign-in)
 - [--connect: one atomic script](#connect-one-atomic-script)
 - [Verify a click actually landed](#verify-a-click)
 - [Long page → element screenshot](#long-page-element-screenshot)
@@ -66,6 +67,39 @@ await page.getByText("How It Works").scrollIntoViewIfNeeded();
 await page.waitForTimeout(400); // settle
 await saveScreenshot(await page.locator(".how-it-works").screenshot(), "hiw.png");
 ```
+
+## Official Chrome Google sign-in
+
+Isolated profile only. Not Profile 1. Human types the password. Agent does not.
+
+**Phase 1 — detached official Chrome, no debug flags.** `Start-Process` (or WMI `Win32_Process.Create` if the agent Job Object kills the window). Do not pass `--remote-debugging-port` or `--remote-debugging-pipe`. Do not use Playwright. Do not use `--channel chrome` for this step.
+
+```powershell
+$profile = Join-Path $env:USERPROFILE ".dev-browser/browsers/<name>/chrome-profile"
+Start-Process "C:/Program Files/Google/Chrome/Application/chrome.exe" -ArgumentList @(
+  "--user-data-dir=$profile",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "https://accounts.google.com/"
+)
+```
+
+Replace `<name>` with the `--browser` name you will use later (example: `yodo-gbp`).
+
+**Done when:** the window shows the Google account and does not show "This browser or app may not be secure".
+
+**Phase 2 — one attach path.** Close that window (cookies stay on disk) or enable `chrome://inspect/#remote-debugging` in it. Then:
+
+```bash
+dev-browser --browser <name> --channel chrome --idle-timeout 0 --timeout 90 <<'EOF'
+const page = await browser.getPage("gbp");
+await page.setViewportSize({ width: 1280, height: 660 });
+await page.goto("https://business.google.com/locations", { waitUntil: "domcontentloaded", timeout: 45000 });
+console.log(JSON.stringify({ url: page.url(), title: await page.title() }));
+EOF
+```
+
+If CDP does not come up, the sign-in window is still holding the isolated profile without debugging. Close it and retry Phase 2. Do not start a second `chrome.exe` with `--remote-debugging-port` yourself — `--channel chrome` already does that.
 
 ## --connect: one atomic script
 `--connect` does NOT persist named pages across invocations. Do the whole multi-step flow in a single script; re-locate the tab each time via `listPages()`.

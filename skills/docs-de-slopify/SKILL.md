@@ -1,9 +1,9 @@
 ---
 name: docs-de-slopify
 description: >-
-  Documentation-specific variant of de-slopify — remove telltale signs of AI-generated
-  "slop" writing from documentation. Use when polishing README files, API docs, or any
-  public-facing text to sound authentically human.
+  Remove telltale signs of AI-generated "slop" writing from documentation. Use when
+  polishing README files, API docs, or any public-facing text to sound authentically
+  human.
 ---
 
 <!-- TOC: THE EXACT PROMPT | Patterns | Examples | References -->

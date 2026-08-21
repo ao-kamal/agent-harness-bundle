@@ -12,13 +12,13 @@ The reference consumer (`scripts/ingest_corpus.py`) renders the normalized harve
 - `<slug>` — first ~55 chars of the text, lowercased, non-alphanumerics → `-`, URLs stripped
 - date is the post's `date_posted`; the id suffix guarantees uniqueness across same-day, same-slug posts
 
-Example: `example-handle-thr-your-biggest-competitor-has-no-website-20260630-289499.md`
+Example: `termsheetinator-thr-your-biggest-competitor-has-no-website-20260630-289499.md`
 
 ## Frontmatter
 
 ```yaml
 ---
-operator: 'example-handle'        # the account harvested (= --operator)
+operator: 'termsheetinator'        # the account harvested (= --operator)
 source: 'twitter'                  # or 'twitter-article' for Articles
 source_url: 'https://x.com/<operator>/status/<root_id>'
 source_id: '<root_id>'
