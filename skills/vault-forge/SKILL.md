@@ -1,138 +1,214 @@
 ---
 name: vault-forge
-description: Build a subject-matter agent vault (knowledge corpus) that grounds multi-agent work in verified source material. Use when the user says "build a vault", "new agent vault", "create a corpus", or invokes /vault-forge. Covers operator selection, acquisition with content gates, classification, MOC/concept synthesis, and mechanical validation. User-invoked — never fire opportunistically.
+description: Builds a subject-matter agent vault (knowledge corpus) grounded in verified sources. Use when the user says "build a vault", "new agent vault", "create a corpus", or invokes /vault-forge.
 disable-model-invocation: true
 ---
 
 # Vault Forge
 
-> **Core insight:** A vault is only as good as its worst capture. Every file must earn its place through verified content, every status claim must be provable by a script, and every quote in the synthesis layer must grep back into the corpus. The failure mode is never "the agent couldn't build the vault" — it's "the agent built a vault that lies about itself."
+> **Core Insight:** A vault is only as good as its worst capture — every file earns its place through verified content, every status claim is provable by a script that has proven it can fail, and no quote ships unless it greps back into the corpus.
 
-Builds an agent vault following the canonical methodology. The methodology doc is the source of truth for *what* a vault is; this skill enforces *how to build one without fabricating it*. Every phase ends on a mechanical gate — if the gate can't pass, the phase isn't done, no matter how done it feels.
+## When to Use
+
+| Situation | Action |
+|---|---|
+| Build a new vault from scraped operators/sources | All phases in order |
+| Ingest an existing export (course files already on disk) | Same phases; Phase 4 swaps to the ingestion-integrity pass |
+| Remediate an existing vault (hollow captures suspected) | Re-run Phase 5 gate + Phase 8 suite against it |
+| Delta-refresh / add operators to an existing vault | Out of scope — see methodology §Incremental |
+
+## Flow
+
+```
+Scope ──▶ Spec&Plan ──▶ Architecture ──▶ Acquire ──▶ Gate ──▶ Classify ──▶ Synthesize ──▶ Validate ──▶ Ship
+(scope     BUILD-SPEC    tree+schema+   acq_log    ledger   frontmatter   MOCs/concepts   suite×2    final
+ verified) +beads        suite+manifest reconciled clean    spot-check    quotes grep     green      commit
+```
+
+Every phase ends on a **Gate**: a condition a script can verify. If the gate can't pass, the phase isn't done — no matter how done it feels.
 
 ## Before you start
 
-Read the canonical methodology (structure, phases, directory layout — do not re-derive it):
+**Locate the reference docs** (resolution order — stop at first hit):
 
-```
-ObsidianVault/References/vault-creation-methodology.md
-```
+1. `%USERPROFILE%\Documents\ObsidianVault\References\vault-creation-methodology.md` (WSL: `/mnt/c/Users/USER/Documents/ObsidianVault/References/…`)
+2. `<bundle-repo>/docs/methodology/vault-creation-methodology.md` — ⚠️ anonymized fork (operator names swapped); treat names as placeholders
+3. Absent everywhere → **reduced-fidelity mode**: proceed using this skill's anti-pattern table as the failure canon; write `reduced-fidelity: reference docs unavailable` as the first `wiki/log.md` entry. Never stall; never invent paths.
 
-Skim the failure canon so the anti-patterns below have faces:
+Failure-canon companions (`vault-creation-failure-canon.md`, `vault-creation-canon-sibling-vaults.md`, same folder): read the sections routed per-phase in the References table — do not load them whole.
 
-```
-ObsidianVault/References/vault-creation-failure-canon.md
-ObsidianVault/References/vault-creation-canon-sibling-vaults.md
-```
-
-(Paths relative to the Obsidian vault root — locate it on the current machine before reading.)
+**Environment:** Python 3 + PyYAML wherever gate scripts run (WSL: `pip install --break-system-packages pyyaml`). `br`, `firecrawl`, `yt-dlp` installed (bundle Stage 2 covers both OSes).
 
 ## The phases
 
 ### 1. Scope
 
-Decide: domain, what is in scope, what is NOT, vault type (authored / multi-source / structured retrieval), operator list.
+Decide: domain, in/out of scope, vault type (**authored** / multi-source / structured retrieval), operator-or-author list.
 
-- Verify each operator has enough in-scope material **before committing** (200+ tweets, or 10+ long-form pieces, or 5+ in-scope articles). A zero-yield operator discovered mid-build is a wasted bead chain.
-- Per-operator scope can vary (articles-only, YouTube-only, timeline+articles). Write the decision down per operator.
+- **Multi-source:** verify each operator's material volume before committing — 200+ tweets, or 10+ long-form pieces, or 5+ in-scope articles. A zero-yield operator discovered mid-build is a wasted bead chain.
+- **Authored:** verify the export instead — ≥20 in-scope source files or ≥50k body chars. The author list is the single author.
+- Per-operator/per-source scope variations (articles-only, YouTube-only) get written into the scope doc, one line each.
 
-**Gate:** written scope with explicit exclusions + per-operator material-volume verification. No build spec until this exists.
+**Gate:** written scope with explicit exclusions + volume verification recorded per operator/author.
 
 ### 2. Spec & plan
 
-Write BUILD-SPEC.md (phases, operators, acquisition sources, success criteria) and lay out the bead graph (`br init`, one bead per phase, `br dep cycles` MUST be empty before execution). Bead descriptions are self-contained runbooks.
+Create the vault repo **first**: `git init -b master` in `AgentVaults/<vault-name>/` (Windows: `%USERPROFILE%\Documents\AgentVaults\`; WSL builds work via `/mnt/c/…`). Everything after this phase commits into it.
 
-**Gate:** BUILD-SPEC.md exists and is committed; `br dep cycles` returns empty.
+Write BUILD-SPEC.md (phases, sources/operators, acquisition surfaces, success criteria including a **minimum-corpus number**, validation-suite contents per Phase 3). Lay out the bead graph (`br init` **from the vault root**; one bead per phase; `br dep cycles` MUST return empty). Bead descriptions are self-contained runbooks.
+
+WSL swarms: redirect `.beads/` to native ext4 per the hot-data rule before `br init`.
+
+**Gate:** repo initialized; BUILD-SPEC.md committed; `br dep cycles` empty.
 
 ### 3. Architecture
 
-Scaffold the directory tree exactly per the methodology (AGENTS.md, schema.md, raw/, wiki/ with index.md + log.md + failures.log, scripts/, mocs/, concepts/, _excluded/). Author AGENTS.md now, update as the build evolves.
+Scaffold exactly this tree:
 
-**Gate:** tree exists, AGENTS.md + schema.md committed. `git log` shows the scaffold commit.
+```
+AGENTS.md  BUILD-SPEC.md  schema.md  manifest.json
+raw/                ← captures; raw/_excluded/ and raw/_quarantined/ live inside it
+scripts/            ← gate scripts live here
+wiki/index.md  wiki/log.md  wiki/failures.log
+wiki/mocs/  wiki/concepts/  wiki/prompts/  wiki/phase-status/
+```
+
+Author AGENTS.md now. Author schema.md fully: type vocabulary (pick per domain, ~8 types), closed tag list, signal 1–5 **each level defined with one sentence + one example**.
+
+Author `scripts/run_all_tests.py` now (it will grow per phase): minimum suites — (1) YAML parse-test every raw file, (2) type/signal/tag ∈ schema vocabulary, (3) hollow-content gate over raw/, (4) wikilink checker, (5) quote-verifier, (6) manifest reconciliation, (7) log-counts-vs-manifest.
+
+Generate `manifest.json`: `{ "<relative-path>": "<sha256>" }` covering raw/ (excluding `_quarantined/`), wiki/, schema.md, AGENTS.md. Regenerate at every subsequent gate.
+
+**Gate:** tree exists; schema.md defines all three vocabularies; `run_all_tests.py --help` exits 0; initial manifest.json committed.
 
 ### 4. Acquire
 
-Discover → verify → acquire. **Never acquire blind.**
+**Multi-source** — discover → verify → acquire. **Never acquire blind.**
 
-1. **Discover** the canonical URL for every target piece. Verify it resolves AND matches the claimed content (fetch, read the title/H1). A URL that 404s is reported NOT FOUND — never guessed. Some domains soft-404 (return HTTP 200 with error content on any slug — svpg.com does this); for those, status means nothing, only content verification counts.
-2. **Acquire** via the appropriate tool (Firecrawl for blogs, x-harvest for X, yt-dlp for YouTube). Pace requests (~12s between calls); on rate limits, cool down 65s and retry (3x), then log the failure and move on.
-3. **Gate every file at write time** — run the hollow-content gate (below) on each capture. Failures are logged as failures in the acquisition log. A failure logged is progress; a failure written as success is the original sin.
+Dispatch discovery with THE EXACT PROMPT (adapt targets, keep the contract):
 
-**Gate:** acquisition_log.json shows every URL attempted with status; zero files in raw/ below the gate thresholds; failure count is honest and non-zero failures exist as failure records, not as files.
+```
+You are doing URL DISCOVERY ONLY (no content scraping). For each target piece,
+find its CANONICAL url, fetch it, and verify the page title/H1 actually matches
+the claimed piece. Report per item: url | http status | title proof | paywalled y/n.
+A url that 404s, soft-404s, or shows different content = NOT FOUND, listing what
+you tried. Never guess slugs. Some domains return HTTP 200 on any slug (svpg.com
+does) — status proves nothing there, content proof is mandatory. Output the
+numbered list as your final message.
+```
+
+Acquire via the matching tool (Firecrawl blogs · x-harvest X · yt-dlp YouTube). Pace ~12s between calls; rate-limited → cool down 65s, retry up to 3×. URLs still failing are marked `TRANSIENT-FAILED`; after the main batch completes, run **one retry sweep** over them; only sweep survivors' remaining failures become `FINAL-FAILED`.
+
+Log every attempt to `acquisition_log.json` — `{timestamp, url|source_path, status ∈ {SUCCESS, REJECT-GATE, FAIL-*, NOT FOUND, SKIP}, reasons, output_path}`.
+
+**Authored** — replace acquisition with the ingestion-integrity pass: verify every source file parses, sha-dedupe identical bodies, log each kept file as `SUCCESS` with `source_path` (no URL exists — do not invent one).
+
+**Gate:** every planned piece appears in `acquisition_log.json` exactly once with a terminal status; zero files in `raw/` **outside `_quarantined/`** fail the Phase-5 gate; SUCCESS entries reconcile 1:1 with files on disk (zero orphans either way).
 
 ### 5. The Gate (hollow-content check)
 
-Run against every file before it counts as acquired. Mechanical, no judgment calls:
+Mechanical — run the gate script over every capture **at write time**. No judgment calls:
 
-- Body (post-frontmatter) ≥ 1,500 chars for articles (≥ 2,500 preferred; tweets exempt).
-- Zero hollow markers in the first 3,000 chars: `page not found`, `post not found`, `404`, `this page couldn't be found`, `subscribe to continue`, `over 1,200,000 subscribers`, `we need your support`, `members only`, `error establishing a database connection`.
-- Near-dup check: identical first-40-words body prefix = same capture under multiple names; keep the longest, quarantine the rest.
-- Thread/podcast captures must contain real artifacts (tweet URLs / timestamps), not tidy "Step 1 / Principle 2" prose — that structure with no artifacts is AI summary, not capture.
+- Body (post-frontmatter) **≥ 2,500 chars** for articles (tweets exempt).
+- Title↔content match: page H1/title contains or matches the discovery-claimed title.
+- Truncation check: last 200 chars end cleanly — no mid-sentence cutoff, no continuation cue (`read the full`, `continue reading`, `keep reading`, `subscribe to continue`).
+- Zero hollow markers in the first 3,000 chars: `page not found`, `post not found`, `404`, `this page couldn't be found`, `over 1,200,000 subscribers`, `we need your support`, `members only`, `error establishing a database connection`.
+- Near-dup: identical first-40-word body prefix = same capture renamed; keep longest, quarantine rest.
+- Threads/podcasts carry real artifacts (tweet URLs, timestamps) — tidy "Step 1 / Principle 2" prose with none is AI summary, not capture.
 
-Quarantine failures into `raw/_quarantined/` with a ledger entry. Never delete — evidence stays auditable.
+Rejections go to `raw/_quarantined/` + one ledger line each. Never delete.
 
-**Gate:** gate script reports 0 quarantined among files claimed as acquired, and the quarantine ledger exists for every rejection.
+**Gate script self-test (once, before first PASS counts):** point the gate at a fixture dir containing a literal "Page not found" file, a 900-char article, and two identical-body files. All three MUST come back REJECTED with reasons. A gate that cannot fail cannot vouch for anything.
+
+**Gate:** self-test passed (recorded in `wiki/log.md`); current corpus run reports zero rejects outside `_quarantined/`; ledger has one entry per reject.
 
 ### 6. Classify
 
-Populate frontmatter (type from the 8-type vocabulary, signal 1-5, tags from the closed schema vocabulary). Batch-classify is fine; then **spot-check 5 files by hand against your own judgment before trusting the run** — if the classifier's signal doesn't match your read, fix the classifier, not the sample. Cheap models inflate signal on good titles over bad bodies; paywalled teasers score high and are worth nothing.
+Populate frontmatter from schema.md's vocabularies (type, signal 1–5, tags). Batch-classification is fine. Cheap models inflate signal on good titles over bad bodies; paywalled teasers score high and are worth nothing.
 
-**Gate:** 100% of raw files have valid YAML frontmatter (parse-test every file), type ∈ vocabulary, signal ∈ 1-5, tags ⊆ schema vocabulary, and the spot-check is recorded in the log.
+Then the spot-check — **recorded so it can't be faked**. Append to `wiki/log.md` a block listing exactly 5 filenames, the classifier's type/signal/tags for each, your agree/disagree verdict per field, and any classifier corrections taken. If your read disagrees with the classifier, fix the classification pipeline, not the sample.
+
+**Gate:** 100% of raw files parse as valid YAML with in-vocabulary fields (suite suite-1/2 green) + spot-check block present in `wiki/log.md`.
 
 ### 7. Synthesize
 
-MOCs (per domain), concept pages (cross-operator), wiki/index.md regenerated from the corpus.
+MOCs per domain, cross-operator concept pages, `wiki/index.md` regenerated from the corpus.
 
-**Every quotation in synthesis must be verified**: normalize whitespace/case, grep the quoted text against the cited file's body. A quote that doesn't grep back is fabrication — remove it or re-source it, and treat its neighbors as suspect. When sources are missing, the synthesis says so; it never fills gaps from plausibility.
+**Every quotation greps back**: normalize whitespace/case, search the quote inside the cited file's body. Misses are fabrication — remove or re-source, and re-check everything sourced from the same file. Missing sources are stated as gaps; synthesis never fills them from plausibility. ("Neighbors" = anything else cited from the same source file.)
 
-**Gate:** link-checker reports zero broken wikilinks AND quote-verifier reports zero unverified quotes. Both numbers come from scripts, not from your feeling about the files.
+**Gate:** suite suites 4+5 green — zero broken wikilinks, zero unverified quotes — from script output, not narration.
 
 ### 8. Validate
 
-Run the full validation suite. Then run it **again from a clean shell** (or have a second agent run it). Green means: all suites pass, manifest hashes match disk, and the corpus passes the hollow gate. If a suite fails, investigate — do not edit the test to match the failure unless the expectation itself is proven stale, and log the change with reasoning.
+Run `python scripts/run_all_tests.py`. Raw output goes into `wiki/log.md` (or a linked file) — the output is the record, not your summary of it.
 
-**Gate:** two consecutive clean full-suite runs (independent invocations), manifest regenerated and committed.
+Then one **independent invocation**: a separate OS-process run — fresh shell, or a dispatched agent with this exact instruction —
+
+```
+You are validating a vault build independently. From <vault-root>, run
+`python scripts/run_all_tests.py`. Do not modify ANY file. Write the complete
+raw stdout/stderr to wiki/validation-independent-run.md and reply with only
+the pass/fail summary line.
+```
+
+Two consecutive all-green runs (author's + independent) close the gate. A failing suite gets investigated; expectations change only when provably stale, with reasoning logged.
+
+**Gate:** both runs green with raw outputs persisted; manifest regenerated and committed post-run.
 
 ### 9. Ship
 
-Commit everything. The log gets the final entry with real counts (files, MOCs, concepts, failures encountered). Update AGENTS.md current-state. Note what to revisit after first real use.
+Final commit. `wiki/log.md` closing entry carries real counts (files, MOCs, concepts, failures encountered — including the zeros). AGENTS.md current-state updated. Note follow-ups for first real use.
 
-**Gate:** final commit exists; `git status` clean; log's final counts match `manifest.json`.
+**Gate:** `git status` clean; log counts == freshly regenerated `manifest.json` counts; raw/ file count ≥ BUILD-SPEC's minimum-corpus number. An internally-consistent near-empty vault is still a failed build.
 
 ## Commit cadence
 
-Commit after every phase gate. One commit per gate, message names the phase. A build lost to an uncommitted working tree is the most preventable catastrophe in this domain.
+One commit per phase gate, named for the phase. An uncommitted working tree is the most preventable catastrophe in this domain.
+
+## Gate scripts
+
+Written when first needed, stored in the vault's `scripts/`, and **each must pass a can-fail self-test**: feed it a known-bad fixture (fabricated quote, broken link, hollow file) and watch it FAIL before any PASS output is admissible. Port proven implementations rather than writing fresh — see References. Attach raw script output to every status claim; narration is not evidence.
 
 ## Anti-patterns
 
 | Don't | Do |
 |---|---|
-| Save a 404/paywall page and log the scrape as successful | Gate content at write time; log failures as failures |
-| Define success as "fetch completed + file written" | Define success as "content verified against the claim" |
-| Trust HTTP status on known soft-404 domains | Content-verify (title/H1 present) regardless of status |
-| Write synthesis quotes from memory of a source | Grep every quote back into the cited file before it ships |
-| Declare "all tests green" from your own run | Re-run from a clean shell; attach raw output to any status claim |
-| Guess URL slugs when discovery fails | Report NOT FOUND with what you tried; ask or substitute a verified piece |
-| Bundle mandated multi-pass work into one command | Run each pass as specified; a shortcut here is a lie in the log |
-| Edit a failing test to green without proof the expectation is stale | Investigate first; log test changes with reasoning |
-| Delete rejected files | Quarantine with a ledger; evidence stays auditable |
-| Fill synthesis gaps with plausible-sounding content | State the gap; leave it visible until a real source fills it |
-| Skip the pre-build operator volume check | Verify material volume before committing beads |
-| One giant commit at the end | Commit at every phase gate |
+| Log a scrape successful because the fetch completed | Gate content at write time; failures are log records, never files |
+| Trust HTTP status on soft-404 domains | Verify title/H1 content regardless of status |
+| Let a 1,600-char teaser pass the length check | Enforce truncation cues + title match + the 2,500 floor |
+| Quote a source from memory | Grep every quote into its cited file before shipping |
+| Declare tests green from your own console | Persist raw output; require one independent invocation |
+| Write a gate script that always says PASS | Can-fail self-test before any PASS counts |
+| Guess URL slugs | Report NOT FOUND + attempts; substitute only verified pieces |
+| Bundle mandated multi-pass work into one command | Each pass runs as specified; shortcuts are lies in the log |
+| Edit a failing test to green | Prove the expectation stale, log the change with reasoning |
+| Delete rejected files | Quarantine + ledger; evidence stays auditable |
+| Fill synthesis gaps plausibly | Name the gap; leave it visible until a real source lands |
+| Skip the volume check | Verify material volume before committing beads |
+| One giant final commit | Commit at every gate |
+| Author vaults through the acquisition machinery | Authored exports take the ingestion-integrity pass |
 
-## The one command per phase
+## Pre-ship checklist
 
-When a phase gate requires a script, the script's output — not your narration — is the record. If no gate script exists yet for a phase, write it first (it becomes part of the vault's `scripts/`), then run it, then claim the gate.
+- [ ] Acquisition/integrity log reconciles 1:1 with raw/ (outside `_quarantined/`)
+- [ ] Gate self-tests recorded; corpus run clean
+- [ ] Spot-check block in `wiki/log.md` with per-file verdicts
+- [ ] Zero broken wikilinks; zero unverified quotes (script outputs persisted)
+- [ ] Manifest regenerated; hashes match disk; counts match log
+- [ ] Two independent green suite runs with raw outputs persisted
+- [ ] Corpus ≥ BUILD-SPEC minimum-corpus number
+- [ ] `git status` clean
 
-## References
+## References — read per phase, not wholesale
 
-| Topic | Where |
-|---|---|
-| Canonical methodology (structure, full phase detail) | `ObsidianVault/References/vault-creation-methodology.md` |
-| Failure canon (12 failure modes, verbatim evidence) | `ObsidianVault/References/vault-creation-failure-canon.md` |
-| Sibling-vault patterns (14 techniques, per-vault profiles) | `ObsidianVault/References/vault-creation-canon-sibling-vaults.md` |
-| X/Twitter acquisition | `x-harvest` skill |
-| Web scraping | `firecrawl` skill |
-| Browser automation / login-gated capture | `dev-browser` skill |
-| Bead graph planning | `beads-workflow` skill |
-| Proven gate implementations (port + parameterize) | any built vault's `_remediation/` scripts — e.g. the product-lead vault's `phase1_gate.py`, `phase3b_acquire.py`, `phase2_purge.py` |
+| Phase | Read | Where |
+|---|---|---|
+| 1–2 | Build planning, bead graphs, authored-vault exemptions | methodology §Phase 0–2 |
+| 3 | Directory layout, utility scripts | methodology §Architecture + §Utility Scripts (`validate_final.py` pattern) |
+| 4 | Acquisition discipline, soft-404s, pacing | failure canon §WT-3, §WT-4; methodology §acquisition |
+| 5 | Hollow-gate design + thresholds origin | failure canon §WT-1 |
+| 6 | Signal-inflation war story | sibling canon §1.1 (WriteWithAI) |
+| 7 | Fabricated-quote forensics | failure canon §FM-2, §WT-2 |
+| 8 | Status-claim inflation, independent validation | failure canon §FM-3, §FM-7 |
+| tools | x-harvest · firecrawl · dev-browser · beads-workflow skills | installed alongside |
+| proven gate code | Port + parameterize | product-lead vault `_remediation/` (`phase1_gate.py`, `phase3b_acquire.py`) if present on-machine; else author per §Gate scripts |
