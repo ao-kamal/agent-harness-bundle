@@ -40,6 +40,7 @@ COPIED DIRS (109):
   extreme-software-optimization
   find-docs
   firecrawl
+  firecrawl-developer-index
   flywheel-planning
   frankentui
   ga4
