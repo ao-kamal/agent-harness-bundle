@@ -92,7 +92,6 @@ COPIED DIRS (109):
   supabase
   system-performance-remediation
   tanstack
-  tax-return-preparation-and-advice-generic
   testing-conformance-harnesses
   testing-golden-artifacts
   testing-real-service-e2e-no-mocks
@@ -104,7 +103,6 @@ COPIED DIRS (109):
   ux-audit
   vibing-with-ntm
   video-obs-youtube-music
-  wills-and-estate-planning-skill
   wizard
   world-class-doctor-mode-for-cli-tools
   wrangler

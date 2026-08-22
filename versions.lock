@@ -1,0 +1,34 @@
+# versions.lock - pinned tool versions for agent-harness-bundle
+#
+# Consumed by install/install.ps1 and install/wsl-setup.sh. Bump a pin here at
+# release time, never by editing installer literals. "latest" is allowed only
+# for tools whose upstream publishes no stable tags.
+#
+# Windows (scoop buckets: main + dicklesworthstone)
+scoop:bv=0.19.0
+scoop:cm=0.2.13
+scoop:caam=0.1.13
+scoop:dcg=0.11.1
+scoop:slb=0.4.0
+scoop:ffmpeg=latest
+
+# Windows (npm global)
+npm:defuddle=0.19.2
+npm:firecrawl-cli=1.23.1
+
+# Windows (pip)
+pip:yt-dlp=latest
+pip:uv=latest
+pip:firecrawl-py=latest
+
+# Payload-pinned binaries
+payload:dev-browser=0.2.9-ergo
+
+# Release-asset tools (verified via SHA256SUMS at install time)
+release:cass=0.6.24
+release:br=0.3.2
+release:ms=0.2.0
+release:fmd=0.3.4
+
+# WSL-side
+wsl:ntm=1.29

@@ -95,15 +95,22 @@ fi
 
 # ---------- step: shell config ----------
 if ! done_step shell-config; then
-  info "Installing shell configuration (markered blocks, idempotent)"
+  info "Installing shell configuration (versioned marker blocks; re-appends on template change)"
   for pair in "bashrc.template:/root/.bashrc" "profile.template:/root/.profile"; do
     src="$CFG/${pair%%:*}"; dst="${pair##*:}"
-    if ! grep -q 'HARNESS-BUNDLE BEGIN' "$dst" 2>/dev/null; then
+    srcHash=$(render "$src" /tmp/.hb-shell-frag && sha256sum /tmp/.hb-shell-frag | cut -d' ' -f1)
+    if grep -q 'HARNESS-BUNDLE BEGIN' "$dst" 2>/dev/null; then
+      # existing block: replace it only if the rendered content changed
+      oldHash=$(sed -n '/HARNESS-BUNDLE BEGIN/,/HARNESS-BUNDLE END/p' "$dst" | grep -v 'BEGIN\|END' | sha256sum | cut -d' ' -f1)
+      if [ "$oldHash" != "$srcHash" ]; then
+        cp "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
+        sed -i '/HARNESS-BUNDLE BEGIN/,/HARNESS-BUNDLE END/d' "$dst"
+        { echo ""; echo "# ===== HARNESS-BUNDLE BEGIN ====="; cat /tmp/.hb-shell-frag; echo "# ===== HARNESS-BUNDLE END ====="; } >> "$dst"
+        note "updated HARNESS-BUNDLE block in $dst (content changed)"
+      fi
+    else
       [ -f "$dst" ] && cp "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
-      { echo ""; echo "# ===== HARNESS-BUNDLE BEGIN ====="; } >> "$dst"
-      render "$src" /tmp/.hb-shell-frag
-      cat /tmp/.hb-shell-frag >> "$dst"
-      echo "# ===== HARNESS-BUNDLE END =====" >> "$dst"
+      { echo ""; echo "# ===== HARNESS-BUNDLE BEGIN ====="; cat /tmp/.hb-shell-frag; echo "# ===== HARNESS-BUNDLE END ====="; } >> "$dst"
     fi
   done
   touch /root/.env.private && chmod 600 /root/.env.private
@@ -174,13 +181,13 @@ inst() { # inst <name> <command...>
 }
 
 cb() { date +%s; }
-inst cass  bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.sh?$(date +%s)" | bash -s -- --easy-mode --verify'
-inst cm    bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/cass_memory_system/main/install.sh?$(date +%s)" | bash -s -- --easy-mode --verify'
-inst br    bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh?$(date +%s)" | bash'
-inst ubs   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/main/install.sh?$(date +%s)" | bash'
-inst dcg   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh?$(date +%s)" | bash -s -- --easy-mode'
-inst ntm   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/ntm/main/install.sh?$(date +%s)" | bash -s -- --easy-mode'
-inst agent-mail bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail/main/scripts/install.sh?$(date +%s)" | bash -s -- --yes'
+inst cass  bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/refs/tags/v0.6.25/install.sh" | bash -s -- --easy-mode --verify'
+inst cm    bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/cass_memory_system/refs/tags/v0.2.13/install.sh" | bash -s -- --easy-mode --verify'
+inst br    bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/refs/tags/v0.3.2/install.sh" | bash'
+inst ubs   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/refs/tags/v5.3.13/install.sh" | bash'
+inst dcg   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/refs/tags/v0.12.0/install.sh" | bash -s -- --easy-mode'
+inst ntm   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/ntm/refs/tags/v1.29.3/install.sh" | bash -s -- --easy-mode'
+inst agent-mail bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail/refs/tags/v0.3.4/scripts/install.sh" | bash -s -- --yes'
 
 # bv: upstream install.sh has broken prebuilt detection (falls back to a slow
 # Go source build) — use the release tarball directly, checksum-verified.
@@ -217,7 +224,7 @@ if ! done_step tool-cosign && ! command -v cosign >/dev/null 2>&1; then
 fi
 if ! done_step tool-caam; then
   if command -v cosign >/dev/null 2>&1; then
-    inst caam bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_account_manager/main/install.sh?$(date +%s)" | bash'
+    inst caam bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_account_manager/refs/tags/v0.1.16/install.sh" | bash'
   else
     warn "caam skipped: cosign not available yet (its installer refuses unverified releases). Re-run this script to retry."
     note "SKIPPED: caam (cosign missing)"

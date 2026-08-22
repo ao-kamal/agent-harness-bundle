@@ -1,6 +1,11 @@
 # Raw planning/survey material — contains unsanitized machine inventory. Never ships.
 planning/
 
+# Backup fossils never ship
+*.bak
+*.bak.*
+*.bak-*
+
 # Safety net: no secret-bearing files, ever
 *.env
 install/wsl-setup.env

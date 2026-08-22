@@ -28,5 +28,7 @@
   "tui": "fullscreen",
   "env": {
     "DCG_HOOK_TIMEOUT_MS": "2000"
-  }
+  },
+  "_hbFragmentVersion": 1,
+  "overrideKeys": []
 }

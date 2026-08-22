@@ -13,16 +13,47 @@
 
 [CmdletBinding()]
 param(
+    [switch]$Help,
     [switch]$SkipWSL,
     [switch]$SkipVault,
     [switch]$Quiet,
     [switch]$Update   # after git pull: re-deploys skills/config (Win + WSL) without redoing installs
 )
 
+if ($Help) {
+    Write-Host "agent-harness-bundle installer"
+    Write-Host ""
+    Write-Host "Usage: powershell -ExecutionPolicy Bypass -File install\install.ps1 [-Help] [-SkipWSL] [-SkipVault] [-Quiet] [-Update]"
+    Write-Host ""
+    Write-Host "  -Help      Show this help and exit"
+    Write-Host "  -SkipWSL   Skip Stage 5 (WSL + Ubuntu toolchain)"
+    Write-Host "  -SkipVault Skip Stage 10 (Obsidian vault starter)"
+    Write-Host "  -Quiet     Suppress informational output (warnings/errors still print)"
+    Write-Host "  -Update    Re-deploy config + skills (Win and WSL) and re-run the smoke test;"
+    Write-Host "             does not redo package installs. Run after 'git pull'."
+    exit 0
+}
+
 $ErrorActionPreference = 'Stop'
 $script:BundleRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $script:StateFile = Join-Path $env:USERPROFILE '.harness-bundle-state.json'
 $script:WinUser = $env:USERNAME
+
+# ---------- atomic lock (mkdir-based; stale-PID detection) ----------
+$script:LockDir = Join-Path $env:TEMP 'harness-bundle.lock'
+if (Test-Path $script:LockDir) {
+    $lockPid = (Get-Content (Join-Path $script:LockDir 'pid') -ErrorAction SilentlyContinue)
+    $alive = $false
+    if ($lockPid) { $alive = [bool](Get-Process -Id $lockPid -ErrorAction SilentlyContinue) }
+    if ($alive -and $lockPid -ne $PID) {
+        Write-Err2 "Another installer run is already active (PID $lockPid). Close it or wait, then re-run."
+        exit 1
+    }
+    Remove-Item $script:LockDir -Recurse -Force  # stale lock from a dead process
+}
+New-Item -ItemType Directory -Path $script:LockDir -Force | Out-Null
+Set-Content (Join-Path $script:LockDir 'pid') $PID
+
 
 # ---------- output ----------
 function Write-Info { param($m) if (-not $Quiet) { Write-Host "-> $m" -ForegroundColor Cyan } }
@@ -41,6 +72,27 @@ function Complete-Stage {
     param($s, $name)
     if (-not ($s.completed -contains $name)) { $s.completed = @($s.completed) + $name; Save-State $s }
     Write-Ok "stage complete: $name"
+}
+function Get-ScriptSha256 { param($path)
+    if (-not (Test-Path $path)) { return 'missing' }
+    (Get-FileHash $path -Algorithm SHA256).Hash.ToLower().Substring(0, 12)
+}
+# Content-hash keyed stages: a stage whose provisioning script changed re-runs even
+# after being marked complete, so -Update propagates provisioning edits.
+function Test-ProvisionScriptChanged { param($s, $stage, $scriptPath)
+    $current = Get-ScriptSha256 $scriptPath
+    $propName = "prov-$stage"
+    $last = $s.PSObject.Properties[$propName].Value
+    return ($last -ne $current)
+}
+function Complete-ProvisionedStage { param($s, $stage, $scriptPath)
+    $current = Get-ScriptSha256 $scriptPath
+    if (-not ($s.completed -contains $stage)) { $s.completed = @($s.completed) + $stage }
+    $propName = "prov-$stage"
+    if ($s.PSObject.Properties[$propName]) { $s.PSObject.Properties.Remove($propName) | Out-Null }
+    $s | Add-Member -NotePropertyName $propName -NotePropertyValue $current -Force
+    Save-State $s
+    Write-Ok "stage complete: $stage (provision script hash recorded)"
 }
 $state = Get-State
 
@@ -68,13 +120,14 @@ function Invoke-GitBash {
 
 if ($Update) {
     Write-Host "-> Update mode: config/skills will be re-deployed (Win + WSL); installs stay untouched" -ForegroundColor Cyan
-    $state.completed = @($state.completed | Where-Object { $_ -ne 'config-deploy' })
+    $state.completed = @($state.completed | Where-Object { $_ -ne 'config-deploy' -and $_ -ne 'smoke' })
     Save-State $state
 }
 
 Write-Host ""
+$script:BundleVersion = (Get-Content (Join-Path $script:BundleRoot 'VERSION') -Raw).Trim()
 Write-Host "==============================================" -ForegroundColor Green
-Write-Host " claude-harness-bundle installer" -ForegroundColor Green
+Write-Host " agent-harness-bundle installer v$script:BundleVersion" -ForegroundColor Green
 Write-Host " A Claude Code harness, packaged" -ForegroundColor DarkGray
 Write-Host "==============================================" -ForegroundColor Green
 Write-Host ""
@@ -149,24 +202,71 @@ if (-not (Test-StageDone $state 'cli-tools')) {
     $localBin = Join-Path $env:USERPROFILE '.local\bin'
     New-Item -ItemType Directory -Force $localBin | Out-Null
 
-    foreach ($pkg in @('bv', 'cm', 'caam', 'dcg', 'slb')) {
-        scoop install "dicklesworthstone/$pkg" 2>$null
+    # Per-tool truthfulness: native commands don't throw in PS 5.1, so every
+    # install is checked via $LASTEXITCODE / command presence and marked
+    # individually. The stage completes only when zero tools failed; failed
+    # tools retry on the next run.
+    function Test-ToolOnPath { param($name) [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+    function Invoke-Checked { param($name, $scriptblock)
+        if (Test-ToolOnPath $name) { Write-Ok "$name already present"; return }
+        & $scriptblock
+        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+            Write-Warn2 "$name install FAILED (exit $LASTEXITCODE) - will retry on re-run"
+            $script:FailedTools += $name
+        } elseif (-not (Test-ToolOnPath $name)) {
+            Write-Warn2 "$name still not on PATH after install attempt"
+            $script:FailedTools += $name
+        } else {
+            Write-Ok "$name installed"
+        }
     }
-    scoop install ffmpeg 2>$null
+    $script:FailedTools = @()
 
-    # cass: official install.ps1 (scoop manifest historically unreliable for cass)
-    Write-Info "cass via official install.ps1"
-    $cassPs1 = Join-Path $env:TEMP 'cass-install.ps1'
-    Invoke-WebRequest 'https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.ps1' -OutFile $cassPs1
-    Unblock-File $cassPs1
-    powershell -ExecutionPolicy Bypass -File $cassPs1 -EasyMode -Verify
+    foreach ($pkg in @('bv', 'cm', 'caam', 'dcg', 'slb')) {
+        Invoke-Checked $pkg { scoop install "dicklesworthstone/$pkg" 2>$null }
+    }
+    Invoke-Checked 'ffmpeg' { scoop install ffmpeg 2>$null }
 
-    # br: its install.sh works natively on Windows via Git Bash
-    Write-Info "br via install.sh (Git Bash)"
-    $brSh = Join-Path $env:TEMP 'br-install.sh'
-    Invoke-WebRequest 'https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh' -OutFile $brSh
-    Invoke-GitBash -ScriptPath $brSh | Out-Null
+    # cass: pinned release zip + .sha256 (scoop manifest historically unreliable; the
+    # pipe-the-install-script path had no checksum - both fixed here)
+    Write-Info "cass via release zip + SHA256"
+    if (Test-ToolOnPath 'cass') { Write-Ok 'cass already present' }
+    else {
+        $cassTag = 'v0.6.25'
+        $cassDir = Join-Path $env:TEMP 'cass-hb'
+        New-Item -ItemType Directory -Force $cassDir | Out-Null
+        Invoke-WebRequest "https://github.com/Dicklesworthstone/coding_agent_session_search/releases/download/$cassTag/cass-windows-amd64.zip" -OutFile "$cassDir\cass.zip"
+        Invoke-WebRequest "https://github.com/Dicklesworthstone/coding_agent_session_search/releases/download/$cassTag/cass-windows-amd64.zip.sha256" -OutFile "$cassDir\cass.zip.sha256"
+        $expected = ((Get-Content "$cassDir\cass.zip.sha256" -Raw).Trim() -split '\s+')[0].ToLower()
+        $actual = (Get-FileHash "$cassDir\cass.zip" -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected) { throw "cass zip hash mismatch - aborting this tool" }
+        Expand-Archive "$cassDir\cass.zip" -DestinationPath "$cassDir\x" -Force
+        $cassExe = Get-ChildItem "$cassDir\x" -Recurse -Filter cass.exe | Select-Object -First 1
+        Copy-Item $cassExe.FullName (Join-Path $localBin 'cass.exe') -Force
+        Unblock-File (Join-Path $localBin 'cass.exe')
+        if ((Get-Command cass -ErrorAction SilentlyContinue)) { Write-Ok 'cass installed' }
+        else { Write-Warn2 'cass installed to .local\bin but not on session PATH yet'; }
+    }
 
+    # br: pinned release tarball + .sha256 via Git Bash tar (same reason as cass)
+    Write-Info "br via release tarball + SHA256"
+    if (Test-ToolOnPath 'br') { Write-Ok 'br already present' }
+    else {
+        $brTag = 'v0.3.2'
+        $brDir = Join-Path $env:TEMP 'br-hb'
+        New-Item -ItemType Directory -Force $brDir | Out-Null
+        Invoke-WebRequest "https://github.com/Dicklesworthstone/beads_rust/releases/download/$brTag/br-0.3.2-windows_amd64.zip" -OutFile "$brDir\br.zip"
+        Invoke-WebRequest "https://github.com/Dicklesworthstone/beads_rust/releases/download/$brTag/br-0.3.2-windows_amd64.zip.sha256" -OutFile "$brDir\br.zip.sha256"
+        $expectedBr = ((Get-Content "$brDir\br.zip.sha256" -Raw).Trim() -split '\s+')[0].ToLower()
+        $actualBr = (Get-FileHash "$brDir\br.zip" -Algorithm SHA256).Hash.ToLower()
+        if ($actualBr -ne $expectedBr) { throw "br zip hash mismatch - aborting this tool" }
+        Expand-Archive "$brDir\br.zip" -DestinationPath "$brDir\x" -Force
+        $brExe = Get-ChildItem "$brDir\x" -Recurse -Filter br.exe | Select-Object -First 1
+        Copy-Item $brExe.FullName (Join-Path $localBin 'br.exe') -Force
+        Unblock-File (Join-Path $localBin 'br.exe')
+        if ((Get-Command br -ErrorAction SilentlyContinue)) { Write-Ok 'br installed' }
+        else { Write-Warn2 'br installed to .local\bin but not on session PATH yet' }
+    }
     # ms: release zip (upstream's own installers are broken for Windows)
     if (-not (Get-Command ms -ErrorAction SilentlyContinue)) {
         Write-Info "ms via release zip + SHA256SUMS"
@@ -211,8 +311,11 @@ if (-not (Test-StageDone $state 'cli-tools')) {
     # npm globals + pip
     # NEVER `npm install -g dev-browser@latest`. SawyerHood stock overwrote our
     # pinned ergo Windows exe on 2026-07-31 (harness-bundle Track A).
-    foreach ($npmPkg in @('ctx7', 'defuddle', 'firecrawl-cli')) { npm install -g $npmPkg --silent }
-    pip install --quiet yt-dlp uv firecrawl-py
+    foreach ($npmPkg in @('defuddle', 'firecrawl-cli')) {
+        Invoke-Checked $npmPkg { npm install -g $npmPkg --silent }
+    }
+    Invoke-Checked 'yt-dlp' { pip install --quiet yt-dlp }
+    Invoke-Checked 'uv' { pip install --quiet uv }
 
     . (Join-Path $script:BundleRoot 'install\_dev-browser.ps1')
     Ensure-PinnedDevBrowser
@@ -223,7 +326,11 @@ if (-not (Test-StageDone $state 'cli-tools')) {
         [Environment]::SetEnvironmentVariable('PATH', "$userPath;$localBin", 'User')
         Write-Ok "added $localBin to User PATH (new shells only)"
     }
-    Complete-Stage $state 'cli-tools'
+    if ($script:FailedTools.Count -gt 0) {
+        Write-Warn2 ("Stage 2 incomplete - failed tools: " + ($script:FailedTools -join ', ') + ". Re-run this installer to retry ONLY the failed tools.")
+    } else {
+        Complete-Stage $state 'cli-tools'
+    }
 }
 
 # =================== Stage 3a: Claude Code + login (MANUAL GATE) ===================
@@ -280,16 +387,51 @@ if (-not (Test-StageDone $state 'config-deploy')) {
 
     Copy-Item (Join-Path $script:BundleRoot 'skills\*') (Join-Path $claudeDir 'skills') -Recurse -Force
 
-    # Render CLAUDE.md + rules ({{WIN_USER}} substitution); never clobber an existing CLAUDE.md
+    # Render CLAUDE.md + rules ({{WIN_USER}} substitution).
+    # Non-destructive deploy: live ~/.claude is canonical. If the live file differs from
+    # what this bundle last deployed (tracked in .harness-deployed-hashes.json), refuse to
+    # overwrite and drop the new content as <name>.incoming for the user to merge.
     function Convert-Template { param($src, $dst)
         (Get-Content $src -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser | Out-File $dst -Encoding utf8
     }
-    $dstClaudeMd = Join-Path $claudeDir 'CLAUDE.md'
-    if (Test-Path $dstClaudeMd) { Copy-Item $dstClaudeMd "$dstClaudeMd.bak-harness-bundle" }
-    Convert-Template (Join-Path $script:BundleRoot 'config\CLAUDE.md.template') $dstClaudeMd
-    Get-ChildItem (Join-Path $script:BundleRoot 'config\rules') -Filter '*.md' | ForEach-Object {
-        Convert-Template $_.FullName (Join-Path $claudeDir "rules\$($_.Name)")
+    function Get-FileSha256 { param($path)
+        if (-not (Test-Path $path)) { return $null }
+        (Get-FileHash $path -Algorithm SHA256).Hash.ToLower()
     }
+    $deployedHashes = Join-Path $env:USERPROFILE '.harness-deployed-hashes.json'
+    if (Test-Path $deployedHashes) { $depHash = Get-Content $deployedHashes -Raw | ConvertFrom-Json } else { $depHash = [pscustomobject]@{} }
+    $script:DeployConflicts = @()
+    function Deploy-ConfigFile { param($rendered, $livePath)
+        # $rendered is the full text of the new file; decide vs. last-deployed hash.
+        $rel = $livePath.Substring($claudeDir.Length + 1)
+        $lastHash = $depHash.PSObject.Properties[$rel].Value
+        $newBytes = [System.Text.Encoding]::UTF8.GetBytes($rendered)
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $newHash = ([BitConverter]::ToString($sha.ComputeHash($newBytes)) -replace '-','').ToLower()
+        if ((Test-Path $livePath) -and $lastHash -and ($null -ne $lastHash)) {
+            $liveHash = Get-FileSha256 $livePath
+            if ($liveHash -ne $lastHash -and $liveHash -ne $newHash) {
+                # live was modified since we deployed; never clobber user edits
+                Copy-Item $livePath "$livePath.bak.$(Get-Date -Format yyyyMMddHHmmss)"
+                Set-Content -Path "$livePath.incoming" -Value $rendered -Encoding utf8
+                $script:DeployConflicts += $rel
+                Write-Warn2 "LIVE EDIT preserved: $rel differs from last deploy -> wrote $rel.incoming (backup alongside); merge manually"
+                return
+            }
+        }
+        if (Test-Path $livePath) {
+            Copy-Item $livePath "$livePath.bak.$(Get-Date -Format yyyyMMddHHmmss)"
+        }
+        Set-Content -Path $livePath -Value $rendered -Encoding utf8
+        if ($depHash.PSObject.Properties[$rel]) { $depHash.PSObject.Properties.Remove($rel) | Out-Null }
+        $depHash | Add-Member -NotePropertyName $rel -NotePropertyValue $newHash -Force
+    }
+    $dstClaudeMd = Join-Path $claudeDir 'CLAUDE.md'
+    Deploy-ConfigFile ((Get-Content (Join-Path $script:BundleRoot 'config\CLAUDE.md.template') -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser) $dstClaudeMd
+    Get-ChildItem (Join-Path $script:BundleRoot 'config\rules') -Filter '*.md' | ForEach-Object {
+        Deploy-ConfigFile ((Get-Content $_.FullName -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser) (Join-Path $claudeDir "rules\$($_.Name)")
+    }
+    $depHash | ConvertTo-Json -Depth 3 | Out-File $deployedHashes -Encoding utf8
     Copy-Item (Join-Path $script:BundleRoot 'config\hooks\*') (Join-Path $claudeDir 'hooks') -Force
     Copy-Item (Join-Path $script:BundleRoot 'config\agents\*') (Join-Path $claudeDir 'agents') -Force
 
@@ -313,7 +455,24 @@ def merge(a, b):
             a[k] = a[k] + [x for x in v if x not in a[k]]
         else:
             a.setdefault(k, v)
+def apply_overrides(a, b, overrides):
+    # fragment-wins for keys explicitly listed in overrideKeys (dot paths)
+    for path in overrides:
+        keys = path.split('.')
+        src, dst = b, a
+        ok = True
+        for k in keys[:-1]:
+            if not isinstance(src.get(k), dict) or not isinstance(dst.get(k), dict):
+                ok = False; break
+            src, dst = src[k], dst[k]
+        if ok and keys[-1] in src:
+            dst[keys[-1]] = src[keys[-1]]
 merge(data, frag)
+stored = data.get('_hbFragmentVersion', 0)
+fragVer = frag.get('_hbFragmentVersion', 1)
+if fragVer > stored:
+    apply_overrides(data, frag, frag.get('overrideKeys', []))
+    data['_hbFragmentVersion'] = fragVer
 with open(dst_path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, indent=2)
 print("merged", os.path.basename(dst_path))
@@ -377,8 +536,14 @@ elseif (-not (Test-StageDone $state 'wsl')) {
 
     Write-Info "Running WSL stage (this is the long one)"
     wsl -d Ubuntu -u root -- bash ($bundleWslPath + '/install/wsl-setup.sh')
-    if ($LASTEXITCODE -eq 10) { Write-Warn2 "Some WSL tools failed to install - re-run the installer later to retry them; continuing" }
+    if ($LASTEXITCODE -eq 10) {
+        # Partial failure: wsl-setup.sh marks each tool's step done only on success,
+        # so a re-run of THIS stage retries just the failed tools. Do NOT mark 'wsl'
+        # complete here, or the retry path becomes unreachable.
+        Write-Warn2 "Some WSL tools failed to install. Re-run this installer (plain re-run) to retry ONLY the failed tools; continuing for now"
+    }
     elseif ($LASTEXITCODE -ne 0) { Write-Err2 "WSL stage failed (exit $LASTEXITCODE). Fix and re-run."; exit 1 }
+    else { Complete-Stage $state 'wsl' }
 
     # Cold-boot cycle: the [boot] hook only fires on VM start
     Write-Info "Restarting WSL so the boot hook fires (daemons start on cold boot only)"
@@ -391,7 +556,6 @@ elseif (-not (Test-StageDone $state 'wsl')) {
     $health = & curl.exe -s --max-time 8 http://127.0.0.1:8765/health
     if ("$health" -match '"status"\s*:\s*"ready"') { Write-Ok "Agent Mail healthy at 127.0.0.1:8765" }
     else { Write-Warn2 "Agent Mail not reachable yet (127.0.0.1:8765). It may still be starting; the smoke test re-checks. NEVER probe 'localhost' - IPv6 trap." }
-    Complete-Stage $state 'wsl'
 }
 
 # =================== Stage 6: Secrets ===================
@@ -402,10 +566,11 @@ if (-not (Test-StageDone $state 'secrets')) {
 }
 
 # =================== Stage 7: MCP registration ===================
-if (-not (Test-StageDone $state 'mcp')) {
+$mcpScript = Join-Path $script:BundleRoot 'install\mcp-register.ps1'
+if ((-not (Test-StageDone $state 'mcp')) -or (Test-ProvisionScriptChanged $state 'mcp' $mcpScript)) {
     Write-Info "Stage 7: MCP registrations"
-    powershell -ExecutionPolicy Bypass -File (Join-Path $script:BundleRoot 'install\mcp-register.ps1')
-    Complete-Stage $state 'mcp'
+    powershell -ExecutionPolicy Bypass -File $mcpScript
+    Complete-ProvisionedStage $state 'mcp' $mcpScript
 }
 
 # =================== Stage 8: Daemons ===================
@@ -462,10 +627,31 @@ if (-not (Test-StageDone $state 'smoke')) {
     Write-Info "Stage 11: smoke test"
     $code = Invoke-GitBash -ScriptPath (Join-Path $script:BundleRoot 'install\smoke-test.sh')
     if ($code -eq 0) { Write-Ok "smoke test green"; Complete-Stage $state 'smoke' }
-    else { Write-Warn2 "smoke test reported failures (exit $code) - see output above and SETUP.md troubleshooting. Re-run this installer to retry after fixes." }
+    else {
+        Write-Err2 "smoke test reported failures (exit $code) - see output above and SETUP.md troubleshooting. Re-run this installer to retry after fixes."
+        $script:SmokeFailed = $true
+    }
 }
 
 # =================== Summary ===================
+# Honesty gate: a failed (or skipped) smoke run suppresses the success banner and exits non-zero.
+$script:SmokeFailed = -not (Test-StageDone $state 'smoke')
+if ($script:SmokeFailed) {
+    Write-Host ""
+    Write-Host "==============================================" -ForegroundColor Red
+    Write-Host " Install FINISHED WITH FAILURES" -ForegroundColor Red
+    Write-Host "==============================================" -ForegroundColor Red
+    Write-Host " The smoke test did NOT pass (skipped or failed). Do not treat this" -ForegroundColor Yellow
+    Write-Host " machine as provisioned until a full green smoke run completes." -ForegroundColor Yellow
+    Write-Host " Re-run this installer after fixing the failures above." -ForegroundColor Yellow
+    Write-Host ""
+    $lockDirNow = Join-Path $env:TEMP 'harness-bundle.lock'
+    if (Test-Path (Join-Path $lockDirNow 'pid')) {
+        $lockPidNow = Get-Content (Join-Path $lockDirNow 'pid') -ErrorAction SilentlyContinue
+        if ($lockPidNow -eq $PID) { Remove-Item $lockDirNow -Recurse -Force }
+    }
+    exit 1
+}
 Write-Host ""
 Write-Host "==============================================" -ForegroundColor Green
 Write-Host " Install complete" -ForegroundColor Green
@@ -479,3 +665,11 @@ Write-Host "   3. Optional opt-in (understand it first, see SETUP.md): skipDange
 Write-Host "   4. Kimi: drop your key at ~\.config\kimi\key to activate the Kimi lane"
 Write-Host ""
 Write-Host " Uninstall: install\uninstall.ps1 (best-effort rollback; see docs/maintenance.md)"
+
+# ---------- lock release ----------
+# Stale locks self-heal via PID detection at startup; this just releases cleanly on normal exit.
+$lockDirNow = Join-Path $env:TEMP 'harness-bundle.lock'
+if (Test-Path (Join-Path $lockDirNow 'pid')) {
+    $lockPidNow = Get-Content (Join-Path $lockDirNow 'pid') -ErrorAction SilentlyContinue
+    if ($lockPidNow -eq $PID) { Remove-Item $lockDirNow -Recurse -Force }
+}

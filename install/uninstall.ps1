@@ -8,7 +8,7 @@ function Write-Ok   { param($m) Write-Host "OK $m" -ForegroundColor Green }
 function Write-Warn2 { param($m) Write-Host "WARN $m" -ForegroundColor Yellow }
 function Confirm-Step { param($q) return ((Read-Host "$q (y/N)") -match '^[Yy]') }
 
-Write-Host "claude-harness-bundle uninstall (best-effort)" -ForegroundColor Yellow
+Write-Host "agent-harness-bundle uninstall (best-effort)" -ForegroundColor Yellow
 Write-Host ""
 
 # 1. Scheduled task + cass daemon
@@ -42,7 +42,7 @@ if (Confirm-Step "Remove the bundled skills from ~\.claude\skills? (your own add
 
 # 4. Rules files
 if (Confirm-Step "Remove ~\.claude\rules\* installed by the bundle?") {
-    foreach ($r in @('windows-commands.md','wsl-patterns.md','ntm-swarm.md','tools-reference.md','mcp-and-services.md','context7.md')) {
+    foreach ($r in @('windows-commands.md','wsl-patterns.md','ntm-swarm.md','tools-reference.md','mcp-and-services.md','developer-index.md','harness-shared.md')) {
         Remove-Item (Join-Path $claudeDir "rules\$r") -Force -ErrorAction SilentlyContinue
     }
     Write-Ok "rules removed"
@@ -79,7 +79,19 @@ if ($ans -ceq 'DELETE-WSL') {
     Write-Ok "Ubuntu distro unregistered"
 } else { Write-Info "WSL left in place (individual WSL pieces: see docs/maintenance.md)" }
 
-# 9. State file
+# 9. State files, RunOnce resume entry, Grok/Antigravity adapter state
 Remove-Item (Join-Path $env:USERPROFILE '.harness-bundle-state.json') -Force -ErrorAction SilentlyContinue
+if (Confirm-Step "Remove the RunOnce auto-resume entry (HarnessBundleResume)?") {
+    Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'HarnessBundleResume' -ErrorAction SilentlyContinue
+    Write-Ok "RunOnce entry removed"
+}
+if (Test-Path (Join-Path $env:USERPROFILE '.grok\memory\from-claude')) {
+    if (Confirm-Step "Remove the Grok memory junction (~\.grok\memory\from-claude)?") {
+        # junctions must be removed with cmd/rmdir, not Remove-Item -Recurse (which follows the link)
+        cmd /c rmdir (Join-Path $env:USERPROFILE '.grok\memory\from-claude') 2>$null
+        Write-Ok "Grok memory junction removed"
+    }
+}
+foreach ($stateFile in @('.grok-state', 'antigravity-state')) { }  # flavor installers keep their own markers; see flavors/*/SETUP.md
 Write-Host ""
 Write-Ok "uninstall pass complete. Backups with .bak-harness-bundle / .bak.<timestamp> suffixes were left in place deliberately."
