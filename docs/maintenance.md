@@ -17,9 +17,10 @@ cd agent-harness-bundle
 git pull
 powershell -ExecutionPolicy Bypass -File install\install.ps1 -Update
 powershell -ExecutionPolicy Bypass -File install\install-grok.ps1 -Update
+powershell -ExecutionPolicy Bypass -File install\install-hermes.ps1 -Update   # if you sit in Hermes
 ```
 
-The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies the skills payload and re-renders the **shared** `~/.claude` templates. `install-grok.ps1 -Update` only refreshes the thin Grok adapter (memory junction, compat pin, compact hook). State files: `%USERPROFILE%\.harness-bundle-state.json` and `%USERPROFILE%\.harness-bundle-grok-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
+The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies the skills payload and re-renders the **shared** `~/.claude` templates. `install-grok.ps1 -Update` only refreshes the thin Grok adapter (memory junction, compat pin, compact hook). `install-hermes.ps1 -Update` re-applies its config keys and refreshes the SOUL.md rules block in place. State files: `%USERPROFILE%\.harness-bundle-state.json`, `%USERPROFILE%\.harness-bundle-grok-state.json`, and `%USERPROFILE%\.harness-bundle-hermes-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
 
 ## Re-run the smoke test after ANY infrastructure change
 

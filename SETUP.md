@@ -62,8 +62,9 @@ The installer runs 11 stages and tells you what it's doing. What to expect:
 
 1. **Open a new terminal** (PATH changed; old windows don't see the new tools).
 2. Run `bash install/smoke-test.sh` any time you want to re-verify the whole stack — and always after you change infrastructure.
-3. **Read the field guide**, in order, starting with `docs/field-guide/01-philosophy.md`. This is the actual point of the bundle. The tools are replaceable; the judgment isn't.
-4. Start your first project by typing `/flywheel-planning` in Claude Code and following it.
+4. **Read the field guide**, in order, starting with `docs/field-guide/01-philosophy.md`. This is the actual point of the bundle. The tools are replaceable; the judgment isn't.
+5. Start your first project by typing `/flywheel-planning` in Claude Code and following it.
+6. If you also use Hermes Agent: `powershell -ExecutionPolicy Bypass -File install\install-hermes.ps1` (see `flavors\hermes\SETUP.md`).
 
 ## The Kimi lane
 

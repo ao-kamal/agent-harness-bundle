@@ -22,6 +22,32 @@ if (Get-ScheduledTask -TaskName 'Cass Watch Daemon' -ErrorAction SilentlyContinu
     }
 }
 
+# 1b. Hermes adapter rollback
+$hermesHomeDir = $env:HERMES_HOME
+if ([string]::IsNullOrWhiteSpace($hermesHomeDir)) { $hermesHomeDir = Join-Path $env:LOCALAPPDATA 'hermes' }
+$hermesConfig = Join-Path $hermesHomeDir 'config.yaml'
+if ((Get-Command hermes -ErrorAction SilentlyContinue) -and (Test-Path $hermesConfig)) {
+    if (Confirm-Step "Remove the harness-bundle keys from Hermes config.yaml (skills.external_dirs, nudge/curator/clarify)?") {
+        $bak = "$hermesConfig.bak-harness-bundle"
+        if (Test-Path $bak) {
+            Copy-Item $bak $hermesConfig -Force
+            Write-Ok "restored config.yaml from backup"
+        } else {
+            Write-Warn2 "no backup found at $bak - remove these keys manually: skills.external_dirs, skills.creation_nudge_interval, curator.enabled, agent.clarify_timeout, mcp_servers.mcp-agent-mail"
+        }
+    }
+    $soul = Join-Path $hermesHomeDir 'SOUL.md'
+    if ((Test-Path $soul) -and (Select-String -Path $soul -Pattern 'BEGIN harness-bundle operating rules' -Quiet)) {
+        if (Confirm-Step "Strip the operating-rules block from Hermes SOUL.md?") {
+            $text = Get-Content $soul -Raw
+            $cleaned = $text -replace '(?s)\r?\n<!-- BEGIN harness-bundle operating rules -->.*?<!-- END harness-bundle operating rules -->\r?\n?', "`n"
+            Set-Content -Path $soul -Value $cleaned -Encoding utf8
+            Write-Ok "SOUL.md block removed"
+        }
+    }
+}
+
+
 # 2. Settings restore from installer backups
 $claudeDir = Join-Path $env:USERPROFILE '.claude'
 foreach ($f in @('settings.json', 'settings.local.json', 'CLAUDE.md')) {

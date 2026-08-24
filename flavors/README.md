@@ -7,8 +7,9 @@ This bundle is one working environment. The flywheel and the brain (`~/.claude`)
 | **Claude Code** | Native. `install\install.ps1` deploys here. | None |
 | **Grok Build** | Built-in `compat.claude` (skills, rules, hooks, MCP, CLAUDE.md). | Thin adapter: `install\install-grok.ps1` |
 | **Antigravity CLI** (`agy`) | No compat flag. Junctions `~/.gemini/antigravity-cli/{skills,rules}` onto `~/.claude`. | Thin adapter: `install\install-antigravity.ps1` |
+| **Hermes Agent** | Native `skills.external_dirs` (read-only, no copies). Rules condensed into `SOUL.md` (global-AGENTS.md is upstream PR #23331, not yet merged). | Thin adapter: `install\install-hermes.ps1` |
 
-You can run all three on one machine. You edit rules and skills in `~/.claude/` once.
+You can run all four on one machine. You edit rules and skills under `~/.claude/` once.
 
 Do **not** add a new front end by copying `config/` into `~/.codex` / `~/.gemini` / `~/.agents`. If a CLI cannot read `~/.claude`, add the smallest adapter that makes it do so (a junction, a compat flag, a single hook JSON). If it still cannot, that is a real gap — document it; do not fork the brain.
 
