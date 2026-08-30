@@ -1,5 +1,7 @@
 # MCP Servers & Local Services
 
+Split from the global CLAUDE.md 2026-07-30; registrations updated to the verified current state (all commands below re-run and confirmed live 2026-07-30).
+
 ## MCP scopes
 
 - **Local scope**: private to current project (`--scope local`)
@@ -21,16 +23,16 @@ claude mcp add --scope user --transport http mcp-agent-mail "http://127.0.0.1:87
 claude mcp add --scope user --transport http mcp-agent-mail "http://127.0.0.1:8765/mcp/" --header "Authorization: Bearer <token-from-config.env>"
 ```
 
-Do NOT declare MCP servers via a `mcpServers` block in `settings.json` — Claude Code silently ignores it there (upstream issue #97). `claude mcp add` is the only real registration path.
+Do NOT declare MCP servers via a `mcpServers` block in `settings.json` — Claude Code silently ignores it there (upstream issue #97). `claude mcp add` is the only real registration path. (Four dead `settings.json` blocks carrying the bearer token were removed 2026-07-30 — don't reintroduce them.)
 
-## Agent Mail (if you set it up)
+## Agent Mail (current architecture, verified 2026-07-30)
 
 Multi-agent coordination layer (file reservations, messaging, inboxes) used by ntm swarms.
 
 - **Server runs in WSL**: `am serve-http --host 0.0.0.0 --port 8765`, started by the WSL `[boot] command` hook (`/usr/local/sbin/mount-fast-data.sh`) on every WSL cold boot — NOT systemd, NOT a Windows scheduled task. Logs: `/root/.config/mcp-agent-mail/serve.log`. Process name is `am serve-http` — find via `pgrep -af 'serve-http'`; stop with `pkill -f 'am serve-http'` (SIGTERM, NEVER -9 / taskkill — force-kill corrupts the SQLite WAL; see runbook gotcha 12).
-- **Do not run this as a Windows-native daemon.** A Windows-native build of the server hits NTFS durable-write failures under its write-back queue — run it in WSL against native ext4 storage instead.
+- **The old Windows-native daemon is RETIRED** (2026-06-04, NTFS durable-write failures). No "Agent Mail Daemon" scheduled task exists; do not recreate it. The NAT-era portproxy task ("WSL Portproxy Pin") is Disabled/vestigial.
 - **Reachability**: mirrored networking + `127.0.0.1:8765` from both OSes. Health: `curl.exe http://127.0.0.1:8765/health` (allow 10-15s after server start before judging).
-- **Config:** `C:\Users\{{WIN_USER}}\.config\mcp-agent-mail\config.env` — `HTTP_BEARER_TOKEN` lives here (the ONLY place it should exist; generate a fresh one, never reuse a token from anywhere else).
+- **Config:** `C:\Users\USER\.config\mcp-agent-mail\config.env` — `HTTP_BEARER_TOKEN` lives here (the ONLY place it should exist).
 - **CLI operator:** `am` (same binary both sides). `am setup run` writes MCP config to `~/.claude/settings.json` which Claude Code ignores (issue #97) — use `claude mcp add` directly for Claude Code; `am setup` is fine for other clients (Codex, Gemini).
 
 ## Morph MCP tools
@@ -42,4 +44,4 @@ Server `morph-mcp` registration exposes `codebase_search` / `edit_file` (gated b
 
 ## n8n workflow automation
 
-When the user mentions workflow automation or n8n: ask first "Would you like me to use n8n for this? I have the n8n-MCP server connected." If yes, `cd` into your n8n project and read its own nested `CLAUDE.md` in full before acting. Local instance at http://localhost:5678; manage via `docker start n8n` / `docker stop n8n` / `docker ps | grep n8n`.
+When the user mentions workflow automation or n8n: ask first "Would you like me to use n8n for this? I have the n8n-MCP server connected." If yes, `cd ~/n8n-workflows`, read `~/n8n-workflows/.claude/CLAUDE.md` in full, and follow it. Local instance at http://localhost:5678; manage via `docker start n8n` / `docker stop n8n` / `docker ps | grep n8n`.

@@ -13,7 +13,7 @@ One brain. Any front end. Edit here, not in a per-CLI copy.
 | Auto-memory | `~/.claude/projects/<encoded-cwd>/memory/` | both (Grok via junction + this rule) |
 | Procedural / session memory | `cm` / `cass` | any harness (CLI) |
 | Grok-only knobs | `~/.grok/config.toml` | Grok Build only |
-| Antigravity-only knobs | `~/.gemini/antigravity-cli/settings.json` | `agy` only. Skills/rules are junctions onto this table, not copies |
+| Antigravity-only knobs | `~/.gemini/antigravity-cli/settings.json` | `agy` only. Skills/rules are junctions, not copies |
 
 Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/`, `~/.agents/`, or `~/.gemini/`. Grok already scans `~/.claude/`. Antigravity gets junctions, not copies. A second tree means every edit has to be made twice.
 
@@ -33,8 +33,8 @@ Durable memories live in Claude Code's per-project store:
 ```
 
 **Encoding:** take the absolute working directory, replace `\`, `/`, and `:` with `-`.
-Example: `C:\Users\NAME\Documents\SomeVault` → `C--Users-NAME-Documents-SomeVault`.
-A WSL twin may exist as `-mnt-c-Users-NAME-Documents-SomeVault`. If both exist, use the one that already has a populated `MEMORY.md`. If none exists, create the Windows-encoded folder.
+Example: `C:\Users\USER\Documents\ObsidianVault` → `C--Users-USER-Documents-ObsidianVault`.
+A WSL twin may exist as `-mnt-c-Users-USER-Documents-ObsidianVault`. If both exist, use the one that already has a populated `MEMORY.md`. If none exists, create the Windows-encoded folder.
 
 Grok indexes the same files through `~/.grok/memory/from-claude` (a junction onto `~/.claude/projects`). Writes must go to the Claude path (or through that junction — same bytes). Do not keep long-term facts only in `~/.grok/memory/MEMORY.md`.
 
@@ -50,7 +50,7 @@ When saving a memory:
 
 ## Daily driver vs swarms
 
-- **Daily work:** whichever CLI you sit in. Grok Build reads this tree via `compat.claude`. Antigravity (`agy`) reads it via the skill/rule junctions from `install\install-antigravity.ps1`.
+- **Daily work:** Grok Build (`grok`).
 - **Swarms:** ntm 1.29+ can `spawn --grok=N` and `--agy=N:<model-id>` with send/interrupt. Grok and Antigravity use their own CLIs and subscriptions. Do not put Antigravity behind CLIProxy. See `ntm-swarm.md`.
 
 ## Inspect

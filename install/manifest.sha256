@@ -12,6 +12,7 @@
 01134bcaf2809f3c509cb72b343e404e9f961ee23341f1e029dce3f81fcf11e1  skills/documentation-website-for-software-project/references/ADVANCED-NEXTRA.md
 011aaa9c4e5029f080bf042b0d69bbeff1397ad90e1aa4bc48bd994a95d6afda  skills/security-audit-for-saas/references/INCIDENT-RESPONSE.md
 011b0cd94e2e0780c53fe8499d4e0f2d735abe3aad6418713788c8296de2aba6  skills/simplify-and-refactor-code-isomorphically/references/FAQ.md
+01324ebaa9b29ff301b3ae6e75bc5d05275bdab223d47ddb2cb8de03675d9fcf  skills/wordpress-port/templates/.wp-env.json
 0137f1116271b321e550abfd8895b8759a12fb4891e4b1997b8a39550e37108f  skills/tax-return-preparation-and-advice-generic/references/strategies/ESTIMATED-TAX-STRATEGIES.md
 014d2e66e7d20033d3a50a75b54470d6e13e4b6f3ba23d8ca712002dcb6232d4  skills/security-audit-for-saas/references/SECURITY-MATURITY.md
 018ebb24f2498626bfd35799206e4cf2cdd2fcdac6ffee28e68b80ed1cd5256e  skills/git-repo-janitor/subagents/handoff-reporter.md
@@ -48,7 +49,6 @@
 04e27252c96a81513acaeb0a1c4bed6034a7b3cfb9e78d4ac8c8f9c258a89e87  skills/browser-extension-automation/references/STRIPE-WEBHOOKS.md
 04e36d5d1cfb74757621f74fdd7921293fad8f0534e72d891f6ac70a4b5e0f1f  skills/git-repo-janitor/references/GLOSSARY.md
 054a4741d71d655faf838d7b3edb07cb1b0b66268825142c67e2715b75087714  skills/docs-de-slopify/SKILL.md
-05643239d7437ec3f5466bb036f79606ee30f8b4fa9b7973e22876df2d30c6b4  config/rules/windows-commands.md
 0573ae78515431d46f4b0588d5c15e56ec3a891bd56e55df80f3d23e7a7f7224  skills/cass/references/PATTERNS.md
 057cd47f47cbdf5d99e107a6a39261704889ac61ea4f39b0b50b8dc995dcc5cf  skills/dcg/SKILL.md
 05ae056ffc31e433240fe78db954ddade35f192efb699a1a0381946d7291faaf  skills/database-migration-expert/templates/rollback-template.ts
@@ -143,6 +143,7 @@
 0f9120cba2aaead848c86c99402f15620f366b0ea5b2c77540bb76d772796e87  skills/git-repo-janitor/scripts/bundle-audit.sh
 0fb622d1cc9256619c818f5838a7278523ff93328571cf324fce4a591d91101c  skills/deadlock-finder-and-fixer/references/ASUPERSYNC.md
 0fb925e62032163892f335406c95060aaa1a23815d221a63ff562ab6170ecd14  skills/world-class-doctor-mode-for-cli-tools/references/recipes/monorepo-multi-cli.md
+0fc1d685e57ddcd9775a5477f4de0cfabecb7960c56601080aff51c393c3950c  config/rules/windows-commands.md
 0fd9fce4d23b1498a8734b5a951e58f240565c93b669f5a699725a43763db9fe  skills/git-worktree-branch-rationalization/references/PROVENANCE-CHAIN.md
 102ef047d168c02111b6e13d0b1f88ded9da1eb720d26d9924361ad87ba3fd7c  skills/git-worktree-branch-rationalization/references/PHASES.md
 1064912bb5b65be1958ed3f934e9e1ca883ebee455622b7136ec988ac129fed4  skills/tax-return-preparation-and-advice-generic/references/strategies/TAX-CREDITS-COMPREHENSIVE.md
@@ -203,6 +204,7 @@
 1739fc7e08399ef65775ef827f973ca3cbe33a9852d6b4bb6e1a5c8123eb6427  skills/documentation-website-for-software-project/references/AUDIENCE.md
 176d70182e61fd1e4495dfcfc325c166bc233969f64d3d1e6dea9e7fee1490c4  skills/simplify-and-refactor-code-isomorphically/references/OPERATOR-CARDS.md
 17d8b243a605aa9efe8eb696e3f8336846cd78a6a1640c1c0e783865b860b895  skills/multi-agent-coordination/references/mcp-agent-mail-api.md
+183136a0dfa8090ed9d3f30e20c377fec8fe4fe7274c9101e66bc756fdd690c4  skills/wordpress-port/templates/wp-env-dns-fix.js
 1878ed84164f0ab42905330d5b2dacae590dc2e733d7e4937f9db9e0feac4d63  skills/wills-and-estate-planning-skill/references/assets/LIFE-INSURANCE.md
 1884d6940957738c85179714bb2b0c10f4cf23f3e93d1bfe9f652e04145d83a4  skills/codebase-report/references/TEMPLATE.md
 18a26e4722b6f503ed6c9df0a93ea045be20eb26e71752c47f3ccc009e2b6db3  config/hooks/impeccable-hook.cmd
@@ -362,6 +364,7 @@
 2aa2922d06e9c037cddd83f9c94734fab4b2787d3ce8dce003522e097553c889  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/assets/scorecard-template.md
 2aa830ef9f7e359d2c82b451ea0007d8a4c99bf378fba7290910d9f3593419bc  skills/beads-compliance-and-completion-verification/references/MODES-AND-TIERS.md
 2ac8f2b1cdc8182614e868bcdbd1546d6bcedd39adb6e2a8c8f3818f45322af1  skills/world-class-doctor-mode-for-cli-tools/subagents/integration-wirer.md
+2aedd00e2a6a1ede3aad5f00ca3847050d03cfeee2327319363337720b0c0af2  skills/wordpress-port/references/pitfalls.md
 2b05936fbde681cdaf88ce7adc50b0279fbae4f2c2e82c1da512aa2d975932cf  skills/firecrawl/rules/install.md
 2b0f429e00f049a7765306772fd0f88d94711f2b1a6136b7abf76da45c1d134d  skills/cc-hooks/references/JSON-OUTPUT.md
 2b31259141560c52f9045cb72ba1f7cfa095f23bcda2843af0aeac92d00fb1d2  skills/profiling-software-performance/scripts/variance_envelope.py
@@ -382,6 +385,7 @@
 2ca999dac55436328bb5c956ef719de27775d66291265e878e8d12a5c3accb85  skills/git-stash-janitor/scripts/bundle-audit.sh
 2cba83543c63603c0f90b9fb28b237e6090045d071f1a70a83793985a51b91f8  skills/readme-writing/references/AGENTS-MD.md
 2cd1bd35341b65aec689d65d763ea1e30ef544d4c325293bf26570e75e7e6df9  skills/git-repo-janitor/scripts/discover-project.sh
+2d1a5454e8af455ac7d2a883061f70bbcc916a3fbd7a7b063c27d4e46a3ab487  skills/gdoc-to-md/scripts/__pycache__/gdoc_to_md.cpython-313.pyc
 2d635fa9a8df83f545ebb71254dd3f365fa2031dc36c279ae222e3c91e252389  skills/documentation-website-for-software-project/references/PROJECT-TYPES.md
 2d67d0a660c405b5a1262778fb7a0402bcf2097912ee225e324ee0183abcb6fe  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/methodology/ERROR-REWRITING-COOKBOOK.md
 2d9e05b88d8d9b944759cd92791876803f6f6f14fda89eac1b522a440819247a  skills/tax-return-preparation-and-advice-generic/references/states/IA.md
@@ -563,7 +567,6 @@
 408b03a8de471fe4c01a3ba1b1aa69c59ea9f99ada2150d7c14601f89db4d462  skills/wills-and-estate-planning-skill/assets/BENEFICIARY-CHANGE-PACKET.md
 40b2d5b7c70b129c9fdb9d4c43f34d7975509d5840e464ee03e01b51a1b57cc1  skills/giil/references/COMMANDS.md
 40c8f591de6f3ef3399568d23fbee8ae716feb3ea9f2cda9d619c6b3f2692034  skills/wills-and-estate-planning-skill/assets/COMPREHENSIVE-PLAN-REPORT.md
-40f0b68e632f242c5492c1aadc6417965bb185c967fe77fb972054b811dcd4b1  config/hooks/post-compact-reminder.py
 4125fabb29be38d70c509aebf2137d0c645bd6e7058b8532e10b6df7b284751d  skills/tax-return-preparation-and-advice-generic/references/strategies/WASH-SALE-RULES.md
 4140c45116c8521a1dd6be33c8cb9d15ae68ed13d0e63a098d811ca3841a157c  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/methodology/JSON-SCHEMA-PATTERNS.md
 415819340caa276b5bf78024a707fff941a50668197a247defbffb7aa96c4607  skills/world-class-doctor-mode-for-cli-tools/references/recipes/other-languages.md
@@ -590,7 +593,6 @@
 449474da38dfe4b64897a65d211e68346201031f0c4a1885dced40ddea40b714  skills/vibing-with-ntm/references/ANTI-PATTERNS.md
 44a7b10843aed783a9e06e045187facff21f14709e9a6f3d7923c619a30c5472  skills/e2e-testing-for-webapps/SKILL.md
 44abe353be30bf7b22147a81e064097eeaa65db3ab640be940f558c230bc8779  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/scripts/audit-replay.sh
-44bcc095a44d54b9c5e14074b38a065ddd9d89db5b2691dda9cc0549b3ef5488  config/rules/wsl-patterns.md
 44c070dcbd5e3ee9360bdf5f081c2eb318b9b2d4f824e44e18312bb3521731f7  skills/mcp-server-design/references/DATABASE-PATTERNS.md
 44d49bb40c5d13dcb944c470367ee05eb1caece710e242f6442bf689f038f357  skills/tax-return-preparation-and-advice-generic/references/states/MT.md
 44e7c00b3dee6be38118f1f40719d814278cb129f9aad34572e0936104b135a4  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/rubric/SCORING-RUBRIC.md
@@ -741,6 +743,8 @@
 566b5c41119f7a09da4ffc3af3198011121a4563f473d9613662c7f47c4cc86a  skills/documentation-website-for-software-project/references/DEPLOY.md
 566f7fb4ded19bd137bc05a9c4f3dc138c0566f3511a29ed7b655d7d2b903d4d  skills/git-stash-janitor/references/WORKED-EXAMPLES.md
 57d9ac1cf17995a865446da1eb83fffcadd8e108f8d1f1396350cf3568900f0d  skills/tax-return-preparation-and-advice-generic/references/states/CA.md
+57e32b440a971340c8457634a195d13a55dbc48d07aef7014a45b99937f91c9c  config/rules/ntm-swarm.md
+57f7ceb073cbd587870af0071f6af69ff3a498543f718c34c0018165ba346920  config/rules/mcp-and-services.md
 581af89db60897a6e69461e158e51bd4013d7618da539d65dc4beb03fea071bd  skills/git-worktree-branch-rationalization/subagents/idea-wizard-reviewer.md
 583e93fcc4fcec5684df01ba4755768110cbbcc4d2e797b07b0eaa89c505eda9  skills/wills-and-estate-planning-skill/assets/SIGNING-READINESS-CHECKLIST.md
 586e8220b76bb58aba918af11a6b7afbae9ffd96d2a110c350619cb418d9e39a  skills/tax-return-preparation-and-advice-generic/references/situations/INVESTOR.md
@@ -806,7 +810,6 @@
 60f1d5a3036a23dd32360a2357fb0ec88086eeee20a24268d9e1cfe1dcd4f0b1  skills/simplify-and-refactor-code-isomorphically/references/REAL-SESSION-EVIDENCE.md
 60f46b77a0486ae9c8e747e42e15353dd7f14df286e57cddf6fca00b0a18f846  skills/git-repo-janitor/references/LEAK-TAXONOMY.md
 60fd60a802c933b6111fd390060985bf5e0e3b1790f8d8807996cba7ca8464fc  skills/security-audit-for-saas/references/GRAPHQL-SECURITY.md
-611b98a09e1f38a22dfff0dbc6238c285226f6bb28e7c10cc889d5a704b65f67  config/rules/ntm-swarm.md
 612ddffd9b892b933a40a968fc558efa2625b6b1d9fc1532de96df8f97ce79d4  skills/simplify-and-refactor-code-isomorphically/scripts/ledger_row.sh
 6130a5380833ebdfb40d5770b4d00cc53e48d13460fe03849f77acfd1fac2f68  skills/extreme-software-optimization/references/LANGUAGE-SPECIFIC.md
 61437eed4360c1697818945deeabe88a025f984d44d511851d646a0173680071  skills/documentation-website-for-software-project/references/QUALITY-METRICS.md
@@ -847,6 +850,7 @@
 64600a3edd8898c03c16f5e492e5024cee0cd91c39715d7b9c1f5c7ab97dc866  skills/git-stash-janitor/references/OPERATOR-LIBRARY.md
 646f93154649a7638e381d08c0891ce8e1673e15cfa45f1ee7c9a471cdd9e686  skills/documentation-website-for-software-project/references/DIAGRAMS.md
 6484beaf9709d91842f4c5778b27933de2a5dd908d76fac9d415d1066c78a615  skills/beads-compliance-and-completion-verification/assets/fixtures/README.md
+649d2929b37c878917a0fb6677b53fa884e829c044057356ac5061ec05c4e626  config/rules/harness-shared.md
 649d5cb84c6e2623dd2e772873ea5e7fb7c52d7df27ca519312c406fa85ad123  skills/wills-and-estate-planning-skill/references/tiers/TIER-5-INDUSTRIALIST.md
 64a7ed260638bee54f82ad7a1eaa79b82423a4cace776eb8d8983e1d1af66aaf  skills/video-obs-youtube-music/scripts/intro-intro_sample.html
 64cfafeeb63d6d4d4c51574e06965b97859f623727ee9b6d7c9e59f8dbce9c0d  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/methodology/AGENT-PROFILES.md
@@ -985,6 +989,7 @@
 7599b8ba4cd19a29dce10dc41aa1758b9a703f430a1f0b8f6494fa3af096268c  skills/simplify-and-refactor-code-isomorphically/scripts/session_setup.sh
 75bdcf7a67069e48280822969ba376557653af64a22c6295a80c7553283da8a0  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/subagents/parity-auditor.md
 75d0dbe666d9bc72e969c58ba20df3e2616c9456544207c3412260a0203f88aa  skills/git-repo-janitor/references/FILE-SMELLS.md
+75db7247eecbb35fab68856a700934c209ceb7acb50f24f4e0b42225833e5e74  skills/edit/prompts/10-ai-tells.md
 75fc389b0de15192311dc09a9b312b9f0c996be2ca6f2da700275c673d77897d  skills/git-repo-janitor/subagents/scope-decider.md
 761b4465ff3fe09e920fa0a166c4ba872df3fdc8a380f2c59d33005b416f3d64  skills/planning-workflow/SKILL.md
 7623e5affdc06d9aeb7a6a1fd36d60987c45d0f0ffb876095b0006772adf9970  skills/git-repo-janitor/subagents/triage-worker.md
@@ -1057,6 +1062,7 @@
 7de98d27cdafa9ac3ee9beb0db773ef93951204c5869fdff9bd72ae7f3fb8beb  skills/git-repo-janitor/scripts/check-disk-pressure.sh
 7e5150c5317372041495f1264072fac34e887814ef1bb4e6be4369b33f536220  skills/react-component-generator/templates/component.tsx.template
 7e9350757a3a238fb682774190c769e68b60713348922df02da38e1d0e3d04a7  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/scripts/estimate.sh
+7e9863de720a2e9d6b8d1898f292fff2ac2c355b4a5a0356fd0181e0a46736a6  skills/wordpress-port/references/stage-details.md
 7e9a6ce56a1e791dd084033a58cf9ad708786a8e525f4e1115d8c247abebe37e  skills/changelog-md-workmanship/references/QUALITY-BAR.md
 7eb737ac5f825d5b9a6602e6ee3b2d2fb2b71544b673d2a5fa700eff12dcb6d9  skills/world-class-doctor-mode-for-cli-tools/scripts/manifest-update.sh
 7ef6ddfaf92e679905f2247d508afa0dbaf8e292439eec0706e2609cadbb6a79  skills/operationalizing-expertise/references/KICKOFF.md
@@ -1073,7 +1079,6 @@
 7fe443f933501980d76515e49c0e558cba59eb8ff52e2d8e28cd25ab8505edc4  skills/beads-compliance-and-completion-verification/scripts/reproducibility-check.py
 80637cef6fde29fbe784a8dfd956f334ac11053b59004ef433510cfa5918abae  skills/world-class-doctor-mode-for-cli-tools/references/methodology/ORCHESTRATION.md
 807db6e6df827c54a064220be656af147ab12bd4e29e77d41d4daf01c510733e  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/subagents/intent-runner.md
-808379693c08f5d00cda4b61a5594c9a5099863fca4ec669b4a58e40ad5b4d4c  skills/dev-browser/references/troubleshooting.md
 80b98fee28c65d98f7983e3085fed530f61718905bf6583c2e3bd014e079f5f9  skills/wills-and-estate-planning-skill/assets/IMPLEMENTATION-LEDGER.md
 80c7f2c4043affccdf93d285fd77ef7df9caf824670b5542b9d9ab14e08b059c  skills/simplify-and-refactor-code-isomorphically/scripts/property_test_scaffold.sh
 80dc4b5dbd2c3cd65632bee5da597e1feab170b59c87d3cd202a999fa025e56d  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/assets/schemas/intent_inference_corpus.schema.json
@@ -1117,6 +1122,7 @@
 8456bd0ea02c139fa42e605a3d108679c51696d7d10c2eb6dc4561ed711ed9bc  skills/wills-and-estate-planning-skill/assets/STRESS-TEST-SCENARIOS.md
 846aeb9fc65ee46a954dc197f9673c35a5be1c288c8066925c8ec8295400595e  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/exemplars/WORKED-EXAMPLES.md
 84985fe4a8b81220c9bd941a82f1e36e0b3c067e93e50459bba3c3742a2f9691  skills/tui-inspector/references/SUITE_AND_REPORT.md
+849a6680c96d86d5750d1e0b4df5af921031a85da838a4fc689b894a565a1add  config/hooks/post-compact-reminder.py
 84a85e45db8d3e2af65b9cecb5cac30987724ea4ee46b0aa896bb31701147046  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/assets/canonical-task-template.md
 84c4a84c268d305ed348cc60a569187adfd6182210bc0e62e76336eff582120a  skills/wills-and-estate-planning-skill/references/situations/FAMILY-BUSINESS-OWNER.md
 84d1becbab558768263b84eebec6b71414d0bf1d93e30e371d5cd71cd0c85183  skills/wills-and-estate-planning-skill/subagents/funding-checklist-generator.md
@@ -1197,6 +1203,7 @@
 8cc3db8c878b280b48cfb81d9a9a31e51322a9dfa980800763c25f42c2fb38bb  skills/beads-compliance-and-completion-verification/scripts/regression-test.sh
 8ce095bc974ed163ab7784ca130ea9f14e176dcc806a4e50ec537eb270518467  skills/skill-rules.json
 8d0cb57b89b435722294dc155f82c8580229c4b25c04ed38df7ccdf640d9b627  skills/wills-and-estate-planning-skill/subagents/finalize-and-cleanse-subagent.md
+8d1ca94ad318bab3a1a7a877ff3a5fcb6c02d830469eee23ff1605851b249b21  skills/wordpress-port/SKILL.md
 8d71e48fc9efef464d0e797c754b6fcc1b442c0f59110c9f0df1660f4ffa1a87  skills/database-migration-expert/examples/rename-column-3-step.md
 8d82064f229f84cf5721172ed63f04a39e321967becd321c3ad455d8ed72c72f  skills/git-worktree-branch-rationalization/references/ADVANCED-RECOVERY.md
 8db64b377f21ee143d8b44af1d48a622a023ccb7cb468f5e1fe310f9cf93fc33  skills/git-repo-janitor/references/COMMIT-MESSAGE-CRAFT.md
@@ -1259,6 +1266,7 @@
 951a47adad644956503f0ea8ccba3a83eab2af4efe6212259a187122a045a39c  skills/wills-and-estate-planning-skill/references/methodology/TIER-TRIAGE.md
 951da11be328c7e8efd29c285b0fc6c8a9e28d8e9773b764c2a22ea5bb836576  skills/world-class-doctor-mode-for-cli-tools/references/methodology/FAILURE-ONTOLOGY.md
 952b3d46049b857c873ce4e17ccd2673cef82796783dd1cbcb674f694af412d0  skills/git-repo-janitor/references/BATCH-MODE.md
+953260ea70b327ced07f3a3cd7866bbb451c49cc5a73a149b29916bde9e42a03  skills/wordpress-port/references/environment.md
 955044335455d129ff1f83075cc356bab5500a330799687d34fdcec4be51538d  skills/tax-return-preparation-and-advice-generic/references/professions/INFLUENCER-CREATOR.md
 955e78bbdb088b34d3e8d6a46c4665771d4171bd108e134063b8cc86ee38d987  skills/library-updater/scripts/validate-upgrade.sh
 955e850b65b5f4d5f4456479887586d3bed271da165aa558764686bfd943c416  skills/security-audit-for-saas/references/BUG-BOUNTY.md
@@ -1287,7 +1295,6 @@
 98cb441c6207a71602f7679ae763b78fd92ca50e28d7761db8a378c71d213d2f  skills/beads-compliance-and-completion-verification/scripts/closer-respond.sh
 98e4c475fe75c9b94aaacaed78a51b11f1dbe9b663f482c4bf654de3cd4f1efd  skills/tax-return-preparation-and-advice-generic/references/professions/TRUCK-DRIVER.md
 98f9384b77ceb1f63debb5996089c357d8f8f002ef991797988d442192b6821a  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/subagents/recommender.md
-98fa52b3c1ad37f5a0c4ac4fbfb4e76911da25ea1891eff90c8c4c31e5b96b6d  config/rules/harness-shared.md
 98faece3efaed46f3caa72abce5f1c18285be04335be01593d0ce66aaa57b5c2  skills/git-stash-janitor/assets/templates/handoff-report-template.md
 992ae87336c51d91333303fd3f34371ecd31670df46ae49b332e30116ae9fcc2  skills/codebase-report/SELF-TEST.md
 9946f8e92e722c5a3559c28f4cdb3086ac12cb66ef7995a4817bd3480f54410d  skills/security-audit-for-saas/references/FIELD-GUIDE.md
@@ -1319,13 +1326,13 @@
 9c3b111bb293781b632995b27efe0379e1251368d761567e19f574e5bdc6b18c  skills/wills-and-estate-planning-skill/references/life-events/NEW-PROPERTY-PURCHASE.md
 9c3b5e5c1916a6abf0f3c1f5db39d3c7dc861f9132ad2efb54d6082fe4166030  skills/beads-compliance-and-completion-verification/references/KNOWN-LIMITATIONS.md
 9d073bb06c08e3b661c8a77d8be35e4919a604fa071ced53869e5a4391288f4e  skills/beads-compliance-and-completion-verification/scripts/polish-remediation-beads.sh
-9d30d76dc9bd7c8fe6fa3ef2a25b7c33e3f4b8215444ef8e85b5927c9131c2fb  config/rules/mcp-and-services.md
 9d40a4fa6ee75d50a37add2491f197a564b97db537f6e3ac3d16ab38d10f8437  skills/tax-return-preparation-and-advice-generic/references/strategies/OPPORTUNITY-ZONES.md
 9d415250ab081a9fbc960019eca3c9a1a8114ffd13aa4fbdca77618abd758036  skills/git-worktree-branch-rationalization/references/BRANCH-WORKTREE-SMELLS.md
 9d45a1c6de1063970b39f56be6bcd95c63756fa621f097d0df0bf63b6fca3f74  skills/changelog-md-workmanship/assets/CHANGELOG-RESEARCH-TEMPLATE.md
 9d4858e96ddfa57a0d9ffd09e3c0aa86b2fb84d077f358f6a8a18ba251206934  skills/git-repo-janitor/references/INTERVIEW-FLOW.md
 9d9f996163b43d7fa7912824ff9597a2886fff1321407a397fe60232d8af461f  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/exemplars/COUNTER-EXAMPLES.md
 9dc8d9bccc53662bc4e4131f6c7c81fe193ae311092d72c0f935637484c0b2bb  skills/git-stash-janitor/references/REPO-ARCHETYPES.md
+9dec12d8e5b153cb550e07092936b5bfc7357cfd650253a839f6469842248b0e  skills/wordpress-port/references/deploy-runbook.md
 9e37dacc25a206f7b70f7d60a92bf87ad893f5bf13b87273aaf33d95b3ec3655  skills/readme-writing/SKILL.md
 9e43e584ec42583ff6c11db79e05023617e40237f741aa62782c66689a1f79a3  skills/documentation-website-for-software-project/references/PHASES.md
 9e5f64e9bb563cec005316be649caa5c7bc3122b2e2c6f772e9b5e71a486aa17  skills/deadlock-finder-and-fixer/references/INCIDENTS.md
@@ -1543,11 +1550,11 @@ b7d173d4ddc36573015835f7ae61e7d57b1afb722160dde1c73011da3c36f634  skills/changel
 b7d57794739fb22929f7558229576836c2df84659ae12011069101bb731fdadf  skills/tax-return-preparation-and-advice-generic/references/states/MO.md
 b7f6faceaad0edcc0d27d4c11b15468776399168110a3fc184fd7b8c6f1c2809  skills/agent-ergonomics-and-intuitiveness-maximization-for-cli-tools/references/methodology/MEGA-COMMAND-DESIGN.md
 b80ce3bda77c0e17e72520a635381f2c42b102b1b0cc7989a3da06920abd33d3  skills/security-audit-for-saas/references/API-SECURITY.md
-b81f9e23373b63790445441de62431d79bb9c54cfae91920a6af782a396181ba  skills/edit/prompts/10-ai-tells.md
 b82ac78b74f735245a29fa4e5720a69ca24849bb3b2411bf0825449faa0cfb62  skills/tax-return-preparation-and-advice-generic/references/intake/INTAKE-QUESTIONNAIRE.md
 b847e6edd006262b8026e65f4bf09832ebfc3403274bcccb7fbfeb3632aacdf1  skills/world-class-doctor-mode-for-cli-tools/references/methodology/COOKBOOK.md
 b8694d9cd181578b35624fd1ac2d381d41c2c9f3fa2ce92431e09caa899db2c7  skills/code-review-gemini-swarm-with-ntm/references/PROMPTS.md
 b86f19cde5bf79f4d3b319f012882b880c35adf2e0bc23bcda68fdc7710d384e  skills/security-audit-for-saas/references/OBSERVABILITY.md
+b8961f642e5203aaee065fab018695aaa00c921c4642a29695ef0c469793b4b8  skills/dev-browser/references/troubleshooting.md
 b8a213b66eeba5dcd48ee1b099d64bd5f28b25e0fcda0096f48099a2ac26be6d  skills/detect-forgotten-sessions-post-crash/agents/openai.yaml
 b9127b4752c7d30895579fa8f0058100ee7149ba07f6d2c0070e010dbdd8ba06  skills/simplify-and-refactor-code-isomorphically/scripts/extract_kernel.sh
 b9175589ba1331dca7febede4706c902eee1b30798dce9625a913d7660daad61  skills/browser-extension-automation/assets/INSTRUCTION-TEMPLATE.md
@@ -1579,6 +1586,7 @@ bd72afac7dcc6dea5a25f532188bc0535c57f98e46e723ab9e86dd1b3d4879d8  skills/wills-a
 bdc3d579d587f94bd7302043f7756c867e56ea715bd1dc95414eb8c5ca1faae5  skills/profiling-software-performance/references/METHODOLOGY.md
 bdcc8fe4b0aa03161faaf8516fa434e0b7f32862606f4bbd5acdac2968b4ac70  skills/world-class-doctor-mode-for-cli-tools/references/methodology/INCIDENT-RESPONSE.md
 bdd60c3bcd5a67081d3dba03b1a3d4efa32f5a6ccd78474acf8faf2176d4ff9e  skills/git-worktree-branch-rationalization/scripts/archive-workspace.sh
+bdf7c0b1763936e2ad7f4b5411feb148f4621bd6c43cc21893b88879e23febb7  config/rules/wsl-patterns.md
 be24847e31fd986973ee46df1a0cd5486edac5a44c0fe3d951c9b6e6bb8b8f7e  skills/gh-og-share-images/generate_og_image.py
 be2c40bcf03edd9e5a6d6e32f97fa66ad809980f1ec159c98fb11d769be764d8  skills/git-worktree-branch-rationalization/scripts/remote-as-worktree-detector.sh
 be39371326e32225afa56af9a256ced7ce8c73da8033b65aebc80a1f9c7f64d1  skills/beads-compliance-and-completion-verification/scripts/validate-quote-bank.py

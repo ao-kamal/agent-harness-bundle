@@ -1,5 +1,7 @@
 # Windows Command Discipline
 
+Split from the global CLAUDE.md 2026-07-30 (content preserved verbatim; loads every session via `~/.claude/rules/`).
+
 ## Following GitHub Setup Instructions
 
 **When setting up tools/projects from GitHub repos, follow the README instructions EXACTLY.** Do not improvise or branch out on your own. Run the commands they specify, in the order they specify. If they have a setup wizard, run it. If they have specific steps, follow them step-by-step. Don't create config files manually if there's a setup command. Don't skip steps. Don't "optimize" the process.
@@ -99,15 +101,15 @@ stdbuf -oL -eL <cmd>   # generic wrapper when a tool lacks a native flag
 
 - Read-only flag: `attrib -R file` / `attrib +R file`
 - ACL inspection: `icacls path`
-- ACL modification: `icacls path /grant <username>:F`
+- ACL modification: `icacls path /grant USER:F`
 
-**WSL cannot write to Windows paths via symlinks.** If a WSL path (e.g., `/root/.claude/skills/`) is symlinked to a Windows path, Rust/native binaries in WSL may fail with "Permission denied" when writing through the symlink. Use `/mnt/c/Users/{{WIN_USER}}/...` instead for cross-boundary writes.
+**WSL cannot write to Windows paths via symlinks.** If a WSL path (e.g., `/root/.claude/skills/`) is symlinked to a Windows path, Rust/native binaries in WSL may fail with "Permission denied" when writing through the symlink. Use `/mnt/c/Users/USER/...` instead for cross-boundary writes.
 
-**If you run WSL2 in mirrored networking mode** (`.wslconfig` `networkingMode=mirrored`) — WSL and Windows share interfaces, so a WSL-bound `0.0.0.0:<port>` IS reachable from Windows. **But always use `127.0.0.1`, never `localhost`, for any WSL-hosted service**: Windows resolves `localhost` to IPv6 `::1` first, most of these servers listen IPv4-only, and mirrored mode blackholes the IPv6 loopback path — the probe hangs to timeout instead of fast-refusing. (`curl.exe http://127.0.0.1:<port>/...` works instantly on the identical server that `Invoke-WebRequest http://localhost:<port>` false-hangs on. This exact trap can fake a "service is down" outage for weeks if you don't know to check it.)
+**WSL2 networking on this machine runs in MIRRORED mode** (`.wslconfig` `networkingMode=mirrored`) — WSL and Windows share interfaces, so a WSL-bound `0.0.0.0:<port>` IS reachable from Windows. **But always use `127.0.0.1`, never `localhost`, for any WSL-hosted service**: Windows resolves `localhost` to IPv6 `::1` first, most of these servers listen IPv4-only, and mirrored mode blackholes the IPv6 loopback path — the probe hangs to timeout instead of fast-refusing. (`curl.exe http://127.0.0.1:<port>/...` works instantly on the identical server that `Invoke-WebRequest http://localhost:<port>` false-hangs on. Root-caused 2026-07-30 after this exact trap faked an "Agent Mail is down" outage for weeks.)
 
-Under NAT mode (the WSL2 default): `localhost` is NOT shared between Windows and WSL; a Windows-bound `0.0.0.0:8765` needs `host.docker.internal:8765` from WSL, and `127.0.0.1`-bound Windows ports are unreachable from WSL entirely. **`localhostForwarding` port-collision footgun** (named incident): WSL2 auto-mirrors any port a WSL process listens on onto Windows `127.0.0.1:<port>` via a `wslrelay` process — a WSL bridge listening on the same port as a Windows service hijacked that port, breaking the Windows service's own startup self-probe. Diagnostic: `Get-NetTCPConnection -LocalPort N -State Listen`, check if the owner is `wslrelay`.
+Under NAT mode (the WSL2 default, not currently used here): `localhost` is NOT shared between Windows and WSL; a Windows-bound `0.0.0.0:8765` needs `host.docker.internal:8765` from WSL, and `127.0.0.1`-bound Windows ports are unreachable from WSL entirely. **`localhostForwarding` port-collision footgun** (named incident): WSL2 auto-mirrors any port a WSL process listens on onto Windows `127.0.0.1:<port>` via a `wslrelay` process — a WSL bridge listening on the same port as a Windows service hijacked that port, breaking the Windows service's own startup self-probe. Diagnostic: `Get-NetTCPConnection -LocalPort N -State Listen`, check if the owner is `wslrelay`.
 
-**Large-file downloads on throttled/flaky networks: use BITS (`Start-BitsTransfer`), NOT `Invoke-WebRequest` or `curl.exe`.** `Invoke-WebRequest` times out (no resume), and `curl.exe` (even with `-C -`/`--retry`) frequently fails mid-transfer (exit 28 timeout, exit 92 HTTP/2 stream error) — repeatedly producing partial files that fail checksum. BITS is resumable, throttle-tolerant, and background-friendly:
+**Large-file downloads on throttled/flaky networks: use BITS (`Start-BitsTransfer`), NOT `Invoke-WebRequest` or `curl.exe`.** `Invoke-WebRequest` times out (no resume), and `curl.exe` (even with `-C -`/`--retry`) frequently fails mid-transfer (exit 28 timeout, exit 92 HTTP/2 stream error) — repeatedly producing partial files that fail checksum. BITS is resumable, throttle-tolerant, and background-friendly (re-confirmed 2026-07-30: BITS succeeded on four GitHub release downloads that curl and scoop both timed out on):
 ```powershell
 Import-Module BitsTransfer
 Start-BitsTransfer -Source $url -Destination $dst -RetryInterval 60 -RetryTimeout 600
@@ -118,13 +120,18 @@ Always verify the SHA256 after (`Get-FileHash $dst -Algorithm SHA256`). If WSL n
 
 ## Python Commands on Windows
 
+Python 3.14.4 is installed at `C:\Users\USER\AppData\Local\Programs\Python\Python314\` with Scripts in the `Scripts` subdirectory. Python 3.13 is also still installed at `Python313\` for fallback (reach via `py -3.13`); a freeze of its packages is saved at `C:\Users\USER\python313-freeze.txt`.
+
 **Preferred commands:**
 
-- `pip install package` - Direct pip (once your Python install is on PATH)
-- `python script.py` - Direct python
-- `py -3.13 script.py` (or whatever fallback version you keep installed) - Run under an older interpreter explicitly when a package lacks wheels for your primary Python version (torch, numba, frida, etc. are common offenders)
+- `pip install package` - Direct pip (PATH configured, resolves to 3.14)
+- `python script.py` - Direct python (3.14)
+- `yt-dlp`, `ffmpeg`, etc. - Installed via pip, available in PATH
+- `py -3.13 script.py` - Run under 3.13 explicitly when a package lacks 3.14 wheels (torch, numba, frida, etc.)
 
 **Fallback if PATH issues occur:** `py -m pip install package`, `py script.py`, `py -c "code"`.
+
+**PATH locations (already added to User PATH):** `C:\Users\USER\AppData\Local\Programs\Python\Python314` and `...\Python314\Scripts`.
 
 **WSL Python is bare AND only `python3` resolves** — `python3` is present but bare `python` is NOT (no `python-is-python3` package, no `/usr/bin/python` symlink). Heredocs that invoke Python from WSL must say `python3` explicitly or 404. The `python3` interpreter also ships without numpy, scipy, pandas, model2vec, yaml, and most third-party libraries — don't assume any non-stdlib modules.
 
@@ -151,6 +158,6 @@ This rule applies anywhere you hit a "thing isn't installed" error. Don't rebuil
 
 ## Secrets in Shell Configs
 
-**Tokens never live directly in `.bashrc`/`.profile`.** Private tokens go in `~/.env.private` (Windows Git Bash) and `/root/.env.private` (WSL, chmod 600), sourced from the shell configs. This keeps shell configs shareable/template-able without a scrub pass. New secrets follow the same pattern: add the `export` line to the `.env.private` file, never to the rc files themselves.
+**Tokens never live directly in `.bashrc`/`.profile`.** Private tokens go in `~/.env.private` (Windows Git Bash) and `/root/.env.private` (WSL, chmod 600), sourced from the shell configs. Established 2026-07-30 so shell configs are shareable/template-able without a scrub pass. New secrets follow the same pattern: add the `export` line to the `.env.private` file, never to the rc files themselves.
 
 **Client credentials go one layer deeper: the Bitwarden vault** (`bw` CLI — full operational contract in rules/tools-reference.md). `.env.private` holds only working-session exports (BW_SESSION, deliberate per-tool tokens); the durable store for logins, cPanels, registrars, and API keys is the vault, item-per-credential.

@@ -65,6 +65,7 @@ LLMs statistically overuse certain words that spiked in frequency post-2023. Whe
 - _align with_, _resonate with_
 - _valuable insights_
 - _in plain terms_ (framing filler — state the thing plainly instead of announcing that you will)
+- _here's the honest picture_ (honesty-announcing filler — announcing honesty makes everything unannounced sound less honest; just state the facts)
 
 **Example (bad):**
 > "This **intricate tapestry** of influences **underscores** the **vibrant** cultural **landscape**, **fostering** a **rich** tradition that **resonates** with communities worldwide."

@@ -1,7 +1,6 @@
 """Post-compact reminder for Claude Code and Grok Build.
 
-One script, two hook envelopes. Deployed to ~/.claude/hooks/.
-Grok's thin compact hook calls this same file. Do not copy it into ~/.grok/hooks/.
+One script, two hook envelopes. Do not copy this into ~/.grok/hooks/.
 
 Claude: SessionStart matcher "compact" — stdout is injected.
 Grok: PreCompact / PostCompact — emit additionalContext JSON.
