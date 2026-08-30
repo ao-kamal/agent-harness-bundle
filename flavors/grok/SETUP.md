@@ -68,7 +68,7 @@ Grok CLI supports custom models via `[model.<id>]` in `~/.grok/config.toml` with
    base_url = "http://127.0.0.1:5210/v1"
    name = "Muse Spark 1.2 Contributor (OpenCode Zen)"
    api_backend = "responses"
-   api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
+   api_key = "sk-local-proxy-stub"
    env_key = "OPENCODE_API_KEY"
    context_window = 1048576
    max_completion_tokens = 131072

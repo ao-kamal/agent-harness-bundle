@@ -17,6 +17,7 @@
 
 const http = require('http');
 const https = require('https');
+const fs = require('fs');
 
 const TARGET_HOST = 'opencode.ai';
 const PORT = 5210;
@@ -26,29 +27,33 @@ const server = http.createServer((clientReq, clientRes) => {
   if (subPath.startsWith('/v1')) {
     subPath = subPath.slice(3);
   }
-  const targetPath = '/zen/go/v1' + subPath;
 
   const headers = { ...clientReq.headers, host: TARGET_HOST };
 
-  // Fallback: If client sent an xAI session JWT (or empty auth), inject the OpenCode key
-  const authHeader = headers['authorization'] || '';
-  if (!authHeader.includes('sk-')) {
-    const envKey = process.env.OPENCODE_API_KEY;
-    if (envKey) {
-      headers['authorization'] = `Bearer ${envKey}`;
-    }
+  // STRICT SECURITY: Unconditionally inject real API key over the dummy key from config
+  const envKey = process.env.OPENCODE_API_KEY;
+  if (envKey) {
+    headers['authorization'] = `Bearer ${envKey}`;
   }
 
-  // Buffer request body to sanitize multi-turn history
+  // Buffer request body to sanitize multi-turn history & determine dynamic routing
   const reqChunks = [];
   clientReq.on('data', chunk => reqChunks.push(chunk));
   clientReq.on('end', () => {
     let finalBody = Buffer.concat(reqChunks);
+    let targetPath = '/zen/go/v1' + subPath; // Default to Go subscription
 
     if (finalBody.length > 0) {
       try {
         const json = JSON.parse(finalBody.toString('utf8'));
         let modified = false;
+
+        // DYNAMIC ROUTING: Route -free models to the standard Zen API
+        if (json.model && typeof json.model === 'string') {
+          if (json.model.includes('-free')) {
+            targetPath = '/zen/v1' + subPath;
+          }
+        }
 
         // Strip prior reasoning items from input history to prevent HTTP 400
         if (Array.isArray(json.input)) {
