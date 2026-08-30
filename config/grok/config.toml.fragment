@@ -13,7 +13,7 @@ hooks = true
 
 # OpenCode Zen (Muse Spark 1.2 Contributor) via local stream filter proxy (127.0.0.1:5210)
 [model.muse-spark-contributor]
-model = "muse-spark-1.2-contributor-free"
+model = "muse-spark-1.2-contributor"
 base_url = "http://127.0.0.1:5210/v1"
 name = "Muse Spark 1.2 Contributor (OpenCode Zen)"
 api_backend = "responses"

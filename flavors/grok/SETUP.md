@@ -64,7 +64,7 @@ Grok CLI supports custom models via `[model.<id>]` in `~/.grok/config.toml` with
 2. In `~/.grok/config.toml`, ensure the model entry exists:
    ```toml
    [model.muse-spark-contributor]
-   model = "muse-spark-1.2-contributor-free"
+   model = "muse-spark-1.2-contributor"
    base_url = "http://127.0.0.1:5210/v1"
    name = "Muse Spark 1.2 Contributor (OpenCode Zen)"
    api_backend = "responses"

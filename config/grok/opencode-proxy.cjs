@@ -26,7 +26,7 @@ const server = http.createServer((clientReq, clientRes) => {
   if (subPath.startsWith('/v1')) {
     subPath = subPath.slice(3);
   }
-  const targetPath = '/zen/v1' + subPath;
+  const targetPath = '/zen/go/v1' + subPath;
 
   const headers = { ...clientReq.headers, host: TARGET_HOST };
 
