@@ -118,6 +118,16 @@ if (Test-Path (Join-Path $env:USERPROFILE '.grok\memory\from-claude')) {
         Write-Ok "Grok memory junction removed"
     }
 }
+$vbs = Join-Path ([System.Environment]::GetFolderPath('Startup')) 'opencode-proxy.vbs'
+if (Test-Path $vbs) {
+    if (Confirm-Step "Remove OpenCode Zen proxy from Startup and stop background proxy?") {
+        Remove-Item $vbs -Force -ErrorAction SilentlyContinue
+        Get-NetTCPConnection -LocalPort 5210 -ErrorAction SilentlyContinue | ForEach-Object {
+            Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+        }
+        Write-Ok "OpenCode Zen proxy startup launcher removed and process stopped"
+    }
+}
 foreach ($stateFile in @('.grok-state', 'antigravity-state')) { }  # flavor installers keep their own markers; see flavors/*/SETUP.md
 Write-Host ""
 Write-Ok "uninstall pass complete. Backups with .bak-harness-bundle / .bak.<timestamp> suffixes were left in place deliberately."

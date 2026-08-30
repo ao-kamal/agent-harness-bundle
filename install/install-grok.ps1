@@ -4,7 +4,8 @@
 #
 # Assumes install.ps1 already deployed ~/.claude (skills, rules, hooks, flywheel).
 # This script only: pin compat.claude, enable memory, junction Claude auto-memory,
-# register compact + dcg hooks that call shared scripts under ~/.claude/hooks.
+# register compact + dcg hooks that call shared scripts under ~/.claude/hooks,
+# and set up the OpenCode Zen stream filter proxy for Muse Spark 1.2.
 #
 # JSON is written from ASCII here-strings, not ConvertTo-Json.
 # Windows PowerShell 5.1 unwraps single-element arrays in ConvertTo-Json,
@@ -52,9 +53,9 @@ $state = Get-State
 New-Item -ItemType Directory -Force (Join-Path $script:GrokHome 'hooks') | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $script:GrokHome 'memory') | Out-Null
 
-# --- compat + memory in config.toml (merge; do not clobber existing keys) ---
+# --- compat + memory + custom models in config.toml (merge; do not clobber existing keys) ---
 if ($Update -or -not ($state.completed -contains 'config')) {
-    Write-Info "pinning compat.claude and enabling memory in config.toml"
+    Write-Info "pinning compat.claude, enabling memory, and checking custom models in config.toml"
     $cfgPath = Join-Path $script:GrokHome 'config.toml'
     $existing = ''
     if (Test-Path $cfgPath) { $existing = Get-Content $cfgPath -Raw }
@@ -75,6 +76,7 @@ hooks = true
     if ($existing -notmatch '(?m)^\[memory\]') {
         Add-Content -Path $cfgPath -Value $block -Encoding utf8
         Write-Ok "appended [memory] + [compat.claude]"
+        $existing = Get-Content $cfgPath -Raw
     } elseif ($existing -notmatch '(?m)^\[compat\.claude\]') {
         Add-Content -Path $cfgPath -Value @"
 
@@ -86,9 +88,30 @@ mcps = true
 hooks = true
 "@ -Encoding utf8
         Write-Ok "appended [compat.claude]"
+        $existing = Get-Content $cfgPath -Raw
     } else {
         Write-Ok "config.toml already has memory/compat blocks (left untouched)"
     }
+
+    if ($existing -notmatch '(?m)^\[model\.muse-spark-contributor\]') {
+        $museBlock = @"
+
+# OpenCode Zen (Muse Spark 1.2 Contributor) via local stream filter proxy (127.0.0.1:5210)
+[model.muse-spark-contributor]
+model = "muse-spark-1.2-contributor-free"
+base_url = "http://127.0.0.1:5210/v1"
+name = "Muse Spark 1.2 Contributor (OpenCode Zen)"
+api_backend = "responses"
+env_key = "OPENCODE_API_KEY"
+context_window = 1048576
+max_completion_tokens = 131072
+"@
+        Add-Content -Path $cfgPath -Value $museBlock -Encoding utf8
+        Write-Ok "appended [model.muse-spark-contributor]"
+    } else {
+        Write-Ok "config.toml already has [model.muse-spark-contributor] (left untouched)"
+    }
+
     Complete-Stage $state 'config'
 }
 
@@ -158,6 +181,65 @@ if ($Update -or -not ($state.completed -contains 'dev-browser')) {
     . (Join-Path $script:BundleRoot 'install\_dev-browser.ps1')
     Ensure-PinnedDevBrowser
     Complete-Stage $state 'dev-browser'
+}
+
+# --- OpenCode Zen (Muse Spark 1.2) stream filter proxy ---
+if ($Update -or -not ($state.completed -contains 'opencode-proxy')) {
+    Write-Info "deploying OpenCode Zen stream filter proxy and startup hooks"
+
+    # 1. Copy proxy scripts
+    $proxyFiles = @('opencode-proxy.cjs', 'start-proxy.ps1', 'run-proxy.cmd')
+    foreach ($file in $proxyFiles) {
+        $src = Join-Path $script:BundleRoot "config\grok\$file"
+        $dst = Join-Path $script:GrokHome $file
+        if (Test-Path $src) {
+            Copy-Item $src $dst -Force
+            Write-Ok "copied config\grok\$file -> $dst"
+        }
+    }
+
+    # 2. Register SessionStart hook in ~/.grok/hooks/opencode-proxy.json
+    $tpl = Join-Path $script:BundleRoot 'config\grok\opencode-proxy.json'
+    if (Test-Path $tpl) {
+        $hookJson = (Get-Content $tpl -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser
+        $hookPath = Join-Path $script:GrokHome 'hooks\opencode-proxy.json'
+        Write-Utf8NoBom $hookPath $hookJson
+        Write-Ok "wrote $hookPath -> start-proxy.ps1"
+    }
+
+    # 3. Register silent Startup launcher for logon persistence
+    $startupFolder = [System.Environment]::GetFolderPath('Startup')
+    if (Test-Path $startupFolder) {
+        $vbsPath = Join-Path $startupFolder 'opencode-proxy.vbs'
+        $vbsText = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "node """ & CreateObject("WScript.Shell").ExpandEnvironmentStrings("%USERPROFILE%") & "\.grok\opencode-proxy.cjs""", 0, False
+"@
+        Write-Utf8NoBom $vbsPath $vbsText
+        Write-Ok "registered startup launcher -> $vbsPath"
+    }
+
+    # 4. Start proxy immediately if node is present and port 5210 is not active
+    $port = 5210
+    $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+    if (-not $conn) {
+        $node = Get-Command 'node' -ErrorAction SilentlyContinue
+        if ($node) {
+            $proxyScript = Join-Path $script:GrokHome 'opencode-proxy.cjs'
+            if (Test-Path $proxyScript) {
+                Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+                    CommandLine = "node `"$proxyScript`""
+                } | Out-Null
+                Write-Ok "started opencode-proxy on port 5210"
+            }
+        } else {
+            Write-Warn2 "node not found on PATH - opencode-proxy will start once node is installed"
+        }
+    } else {
+        Write-Ok "opencode-proxy already running on port 5210"
+    }
+
+    Complete-Stage $state 'opencode-proxy'
 }
 
 Write-Ok 'Grok adapter done. Run: grok inspect   and   bash install/smoke-test-grok.sh'

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File \"C:\\Users\\{{WIN_USER}}\\.grok\\start-proxy.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -59,3 +59,13 @@ WSL needs `/usr/local/bin/grok` exec'ing the Windows `grok.exe` (same shape as t
 | `/model` inside Claude | `/model` or `Ctrl+M` inside Grok |
 
 Do not run `claude mcp add` **and** `grok mcp add` for the same server unless compat MCP is actually broken.
+
+## Custom models & stream filter proxy (OpenCode Zen / Muse Spark)
+
+Grok CLI parses OpenAI Responses API SSE streams with a strict Rust `serde` enum. Upstream providers like OpenCode Zen inject non-standard `event: ping` frames that cause deserialization errors (`unknown variant ping`). Additionally, multi-turn history containing prior `type: "reasoning"` output items is rejected by upstream providers with HTTP 400 (`Invalid reasoning item id format`).
+
+The bundle deploys a lightweight local filter proxy at `127.0.0.1:5210` (`~/.grok/opencode-proxy.cjs`):
+- Strips `event: ping` frames in real-time.
+- Sanitizes prior `reasoning` items from multi-turn `input` payloads before forwarding.
+- Injects `OPENCODE_API_KEY` fallback if Grok forwards an xAI session token.
+- Maintained as a persistent background daemon via Windows Startup (`opencode-proxy.vbs`) and Grok's `SessionStart` hook.
