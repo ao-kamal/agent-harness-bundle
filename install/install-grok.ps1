@@ -94,7 +94,15 @@ hooks = true
     }
 
     if ($existing -notmatch '(?m)^\[model\.muse-spark-contributor\]') {
-        $museBlock = @"
+        $fragFile = Join-Path $PSScriptRoot "..\config\grok\config.toml.fragment"
+        if (Test-Path $fragFile) {
+            $fragContent = Get-Content $fragFile -Raw -Encoding utf8
+            # Extract everything from the first model block onward
+            $modelBlocks = $fragContent -replace '(?s)\A.*?(?=\[model)', "`n"
+            Add-Content -Path $cfgPath -Value $modelBlocks -Encoding utf8
+            Write-Ok "appended OpenCode models from config.toml.fragment"
+        } else {
+            $museBlock = @"
 
 # OpenCode Zen (Muse Spark 1.2 Contributor) via local stream filter proxy (127.0.0.1:5210)
 [model.muse-spark-contributor]
@@ -102,15 +110,16 @@ model = "muse-spark-1.2-contributor"
 base_url = "http://127.0.0.1:5210/v1"
 name = "Muse Spark 1.2 Contributor (OpenCode Zen)"
 api_backend = "responses"
-api_key = "sk-local-proxy-stub"
+api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
 "@
-        Add-Content -Path $cfgPath -Value $museBlock -Encoding utf8
-        Write-Ok "appended [model.muse-spark-contributor]"
+            Add-Content -Path $cfgPath -Value $museBlock -Encoding utf8
+            Write-Ok "appended [model.muse-spark-contributor]"
+        }
     } else {
-        Write-Ok "config.toml already has [model.muse-spark-contributor] (left untouched)"
+        Write-Ok "config.toml already has OpenCode models (left untouched)"
     }
 
     Complete-Stage $state 'config'

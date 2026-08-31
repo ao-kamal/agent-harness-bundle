@@ -19,6 +19,18 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 
+process.on('uncaughtException', (err) => {
+  try {
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UncaughtException: ${err.message}\n${err.stack}\n`);
+  } catch (e) {}
+});
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UnhandledRejection: ${reason}\n`);
+  } catch (e) {}
+});
+
 const TARGET_HOST = 'opencode.ai';
 const PORT = 5210;
 
@@ -29,9 +41,19 @@ const server = http.createServer((clientReq, clientRes) => {
   }
 
   const headers = { ...clientReq.headers, host: TARGET_HOST };
+  delete headers['connection'];
+  delete headers['content-length'];
+  delete headers['transfer-encoding'];
 
   // STRICT SECURITY: Unconditionally inject real API key over the dummy key from config
-  const envKey = process.env.OPENCODE_API_KEY;
+  let envKey = process.env.OPENCODE_API_KEY;
+  if (!envKey || !envKey.startsWith('sk-')) {
+    try {
+      const cfg = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
+      const m = cfg.match(/api_key\s*=\s*"([^"]+)"/);
+      if (m && m[1].startsWith('sk-') && !m[1].includes('GOES-HERE')) envKey = m[1];
+    } catch (e) {}
+  }
   if (envKey) {
     headers['authorization'] = `Bearer ${envKey}`;
   }
@@ -117,22 +139,30 @@ const server = http.createServer((clientReq, clientRes) => {
         }
       });
 
+      proxyRes.on('error', (err) => {
+        try { clientRes.end(); } catch (e) {}
+      });
+
       proxyRes.on('end', () => {
         if (buffer.trim()) {
           if (!(/^event:\s*ping/m.test(buffer) || /"type":\s*"ping"/m.test(buffer))) {
-            clientRes.write(buffer + '\n\n');
+            try { clientRes.write(buffer + '\n\n'); } catch (e) {}
           }
         }
-        clientRes.end();
+        try { clientRes.end(); } catch (e) {}
       });
     });
 
     proxyReq.on('error', (err) => {
-      clientRes.writeHead(502, { 'Content-Type': 'application/json' });
-      clientRes.end(JSON.stringify({ error: err.message }));
+      try {
+        clientRes.writeHead(502, { 'Content-Type': 'application/json' });
+        clientRes.end(JSON.stringify({ error: err.message }));
+      } catch (e) {}
     });
 
-    proxyReq.write(finalBody);
+    if (finalBody.length > 0) {
+      proxyReq.write(finalBody);
+    }
     proxyReq.end();
   });
 });
