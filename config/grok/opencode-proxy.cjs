@@ -44,20 +44,17 @@ const server = http.createServer((clientReq, clientRes) => {
   delete headers['content-length'];
   delete headers['transfer-encoding'];
 
-  // Fallback: If client sent an xAI session JWT (or empty auth), inject the OpenCode key
-  const authHeader = headers['authorization'] || '';
-  if (!authHeader.includes('sk-')) {
-    let key = process.env.OPENCODE_API_KEY;
-    if (!key || !key.startsWith('sk-')) {
-      try {
-        const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
-        const m = configText.match(/api_key\s*=\s*"([^"]+)"/);
-        if (m) key = m[1];
-      } catch (e) {}
-    }
-    if (key) {
-      headers['authorization'] = `Bearer ${key}`;
-    }
+  // Enforce active OpenCode API key from environment or config.toml
+  let activeKey = process.env.OPENCODE_API_KEY;
+  if (!activeKey || !activeKey.startsWith('sk-')) {
+    try {
+      const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
+      const m = configText.match(/api_key\s*=\s*"([^"]+)"/);
+      if (m) activeKey = m[1];
+    } catch (e) {}
+  }
+  if (activeKey) {
+    headers['authorization'] = `Bearer ${activeKey}`;
   }
 
   // Merge catalogs for GET /v1/models
