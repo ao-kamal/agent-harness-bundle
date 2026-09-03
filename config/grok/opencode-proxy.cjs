@@ -39,42 +39,90 @@ const server = http.createServer((clientReq, clientRes) => {
   if (subPath.startsWith('/v1')) {
     subPath = subPath.slice(3);
   }
-
   const headers = { ...clientReq.headers, host: TARGET_HOST };
   delete headers['connection'];
   delete headers['content-length'];
   delete headers['transfer-encoding'];
 
-  // STRICT SECURITY: Unconditionally inject real API key over the dummy key from config
-  let envKey = process.env.OPENCODE_API_KEY;
-  if (!envKey || !envKey.startsWith('sk-')) {
-    try {
-      const cfg = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
-      const m = cfg.match(/api_key\s*=\s*"([^"]+)"/);
-      if (m && m[1].startsWith('sk-') && !m[1].includes('GOES-HERE')) envKey = m[1];
-    } catch (e) {}
-  }
-  if (envKey) {
-    headers['authorization'] = `Bearer ${envKey}`;
+  // Fallback: If client sent an xAI session JWT (or empty auth), inject the OpenCode key
+  const authHeader = headers['authorization'] || '';
+  if (!authHeader.includes('sk-')) {
+    let key = process.env.OPENCODE_API_KEY;
+    if (!key || !key.startsWith('sk-')) {
+      try {
+        const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
+        const m = configText.match(/api_key\s*=\s*"([^"]+)"/);
+        if (m) key = m[1];
+      } catch (e) {}
+    }
+    if (key) {
+      headers['authorization'] = `Bearer ${key}`;
+    }
   }
 
-  // Buffer request body to sanitize multi-turn history & determine dynamic routing
+  // Merge catalogs for GET /v1/models
+  if (clientReq.method === 'GET' && (subPath === '/models' || subPath === '/models/')) {
+    const fetchCatalog = (path) => new Promise(resolve => {
+      const r = https.request({
+        hostname: TARGET_HOST,
+        port: 443,
+        path: path,
+        method: 'GET',
+        headers: headers
+      }, res => {
+        let b = '';
+        res.on('data', c => b += c);
+        res.on('end', () => {
+          try { resolve(JSON.parse(b).data || []); } catch(e) { resolve([]); }
+        });
+      });
+      r.on('error', () => resolve([]));
+      r.end();
+    });
+
+    Promise.all([fetchCatalog('/zen/go/v1/models'), fetchCatalog('/zen/v1/models')]).then(([go, zen]) => {
+      const map = new Map();
+      for (const m of [...go, ...zen]) {
+        if (!map.has(m.id)) map.set(m.id, m);
+      }
+      const merged = { object: 'list', data: Array.from(map.values()) };
+      const body = JSON.stringify(merged);
+      clientRes.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      });
+      clientRes.end(body);
+    }).catch(err => {
+      clientRes.writeHead(500, { 'Content-Type': 'application/json' });
+      clientRes.end(JSON.stringify({ error: err.message }));
+    });
+    return;
+  }
+
+  // Buffer request body to sanitize multi-turn history and determine upstream route
   const reqChunks = [];
   clientReq.on('data', chunk => reqChunks.push(chunk));
   clientReq.on('end', () => {
     let finalBody = Buffer.concat(reqChunks);
-    let targetPath = '/zen/go/v1' + subPath; // Default to Go subscription
+    let targetBase = '/zen/go/v1';
 
     if (finalBody.length > 0) {
       try {
         const json = JSON.parse(finalBody.toString('utf8'));
         let modified = false;
 
-        // DYNAMIC ROUTING: Route -free models to the standard Zen API
-        if (json.model && typeof json.model === 'string') {
-          if (json.model.includes('-free')) {
-            targetPath = '/zen/v1' + subPath;
-          }
+        // Map Muse Spark model identifiers to the free Zen tier
+        if (json.model === 'muse-spark-1.3-contributor' || json.model === 'muse-spark-1.3') {
+          json.model = 'muse-spark-1.3-contributor-free';
+          modified = true;
+        } else if (json.model === 'muse-spark-1.2-contributor' || json.model === 'muse-spark-1.2') {
+          json.model = 'muse-spark-1.2-contributor-free';
+          modified = true;
+        }
+
+        // Determine upstream base path: Zen endpoint (/zen/v1) vs Go endpoint (/zen/go/v1)
+        if (typeof json.model === 'string' && (json.model.startsWith('muse-') || json.model.endsWith('-free'))) {
+          targetBase = '/zen/v1';
         }
 
         // Strip prior reasoning items from input history to prevent HTTP 400
@@ -96,13 +144,17 @@ const server = http.createServer((clientReq, clientRes) => {
 
         if (modified) {
           finalBody = Buffer.from(JSON.stringify(json));
-          headers['content-length'] = Buffer.byteLength(finalBody);
         }
       } catch (e) {
         // Non-JSON or parse error; forward untouched
       }
     }
 
+    if (finalBody.length > 0) {
+      headers['content-length'] = Buffer.byteLength(finalBody);
+    }
+
+    const targetPath = targetBase + subPath;
     const options = {
       hostname: TARGET_HOST,
       port: 443,
@@ -110,6 +162,8 @@ const server = http.createServer((clientReq, clientRes) => {
       method: clientReq.method,
       headers: headers
     };
+
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Outgoing Headers: ${JSON.stringify(headers)}\n`);
 
     const proxyReq = https.request(options, (proxyRes) => {
       const contentType = proxyRes.headers['content-type'] || '';
@@ -154,6 +208,9 @@ const server = http.createServer((clientReq, clientRes) => {
     });
 
     proxyReq.on('error', (err) => {
+      try {
+        fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream ProxyReq Error: ${err.message} (${clientReq.method} ${targetPath})\n`);
+      } catch (e) {}
       try {
         clientRes.writeHead(502, { 'Content-Type': 'application/json' });
         clientRes.end(JSON.stringify({ error: err.message }));
