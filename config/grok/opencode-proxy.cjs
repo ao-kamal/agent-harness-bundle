@@ -18,6 +18,34 @@
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
+const crypto = require('crypto');
+
+function resolveSessionId(clientHeaders, jsonBody) {
+  if (clientHeaders['x-opencode-session']) return clientHeaders['x-opencode-session'];
+  if (clientHeaders['x-grok-session-id']) return clientHeaders['x-grok-session-id'];
+  if (clientHeaders['x-grok-conv-id']) return clientHeaders['x-grok-conv-id'];
+  if (clientHeaders['x-session-id']) return clientHeaders['x-session-id'];
+  if (clientHeaders['x-conversation-id']) return clientHeaders['x-conversation-id'];
+
+  if (jsonBody) {
+    if (typeof jsonBody.conversation_id === 'string' && jsonBody.conversation_id) {
+      return jsonBody.conversation_id;
+    }
+    if (typeof jsonBody.session_id === 'string' && jsonBody.session_id) {
+      return jsonBody.session_id;
+    }
+    if (Array.isArray(jsonBody.messages) && jsonBody.messages.length > 0) {
+      const firstMsg = JSON.stringify(jsonBody.messages[0]);
+      return 'sess_' + crypto.createHash('sha256').update(firstMsg).digest('hex').slice(0, 32);
+    }
+    if (Array.isArray(jsonBody.input) && jsonBody.input.length > 0) {
+      const firstInput = JSON.stringify(jsonBody.input[0]);
+      return 'sess_' + crypto.createHash('sha256').update(firstInput).digest('hex').slice(0, 32);
+    }
+  }
+
+  return 'sess_' + crypto.randomUUID();
+}
 
 process.on('uncaughtException', (err) => {
   try {
@@ -59,6 +87,11 @@ const server = http.createServer((clientReq, clientRes) => {
 
   // Merge catalogs for GET /v1/models
   if (clientReq.method === 'GET' && (subPath === '/models' || subPath === '/models/')) {
+    headers['x-opencode-session'] = resolveSessionId(clientReq.headers, null);
+    if (!headers['user-agent'] || headers['user-agent'].startsWith('curl/')) {
+      headers['user-agent'] = 'grok-shell/1.0.13 (windows; x86_64)';
+    }
+
     const fetchCatalog = (path) => new Promise(resolve => {
       const r = https.request({
         hostname: TARGET_HOST,
@@ -102,10 +135,12 @@ const server = http.createServer((clientReq, clientRes) => {
   clientReq.on('end', () => {
     let finalBody = Buffer.concat(reqChunks);
     let targetBase = '/zen/go/v1';
+    let parsedJson = null;
 
     if (finalBody.length > 0) {
       try {
         const json = JSON.parse(finalBody.toString('utf8'));
+        parsedJson = json;
         let modified = false;
 
         // Map Muse Spark model identifiers to the free Zen tier
@@ -149,6 +184,14 @@ const server = http.createServer((clientReq, clientRes) => {
 
     if (finalBody.length > 0) {
       headers['content-length'] = Buffer.byteLength(finalBody);
+    }
+
+    // Enforce x-opencode-session header (required by OpenCode Go as of 09/06 for session affinity & caching)
+    headers['x-opencode-session'] = resolveSessionId(clientReq.headers, parsedJson);
+
+    // Normalize User-Agent to grok-shell if missing or curl
+    if (!headers['user-agent'] || headers['user-agent'].startsWith('curl/')) {
+      headers['user-agent'] = 'grok-shell/1.0.13 (windows; x86_64)';
     }
 
     const targetPath = targetBase + subPath;

@@ -41,5 +41,15 @@ else
   skip "agy on PATH (install official CLI)"
 fi
 
+if [ -f "$AGY/keybindings.json" ]; then
+  if grep -q '"alt+v"' "$AGY/keybindings.json" && ! grep -q '"ctrl+v"' "$AGY/keybindings.json"; then
+    pass "keybindings.json unintercepts ctrl+v (edit.paste -> alt+v)"
+  else
+    fail "keybindings.json exists but ctrl+v is still intercepted"
+  fi
+else
+  fail "keybindings.json missing in $AGY"
+fi
+
 echo "pass=$PASS fail=$FAIL skip=$SKIP"
 [ "$FAIL" -eq 0 ]
