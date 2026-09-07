@@ -143,18 +143,31 @@ const server = http.createServer((clientReq, clientRes) => {
         parsedJson = json;
         let modified = false;
 
-        // Map Muse Spark model identifiers to the free Zen tier
-        if (json.model === 'muse-spark-1.3-contributor' || json.model === 'muse-spark-1.3') {
-          json.model = 'muse-spark-1.3-contributor-free';
-          modified = true;
-        } else if (json.model === 'muse-spark-1.2-contributor' || json.model === 'muse-spark-1.2') {
-          json.model = 'muse-spark-1.2-contributor-free';
-          modified = true;
+        // Determine upstream base path: Zen endpoint (/zen/v1) for free models vs Go endpoint (/zen/go/v1)
+        if (typeof json.model === 'string' && json.model.endsWith('-free')) {
+          targetBase = '/zen/v1';
+        } else {
+          targetBase = '/zen/go/v1';
         }
 
-        // Determine upstream base path: Zen endpoint (/zen/v1) vs Go endpoint (/zen/go/v1)
-        if (typeof json.model === 'string' && (json.model.startsWith('muse-') || json.model.endsWith('-free'))) {
-          targetBase = '/zen/v1';
+        // Normalize reasoning effort based on target endpoint API shape
+        const isResponses = subPath.includes('responses');
+        if (isResponses) {
+          if (json.reasoning_effort) {
+            json.reasoning = { effort: json.reasoning_effort };
+            delete json.reasoning_effort;
+            modified = true;
+          } else if (json.reasoning && typeof json.reasoning === 'string') {
+            json.reasoning = { effort: json.reasoning };
+            modified = true;
+          }
+        } else {
+          // Chat completions expects reasoning_effort as string
+          if (json.reasoning && typeof json.reasoning.effort === 'string') {
+            json.reasoning_effort = json.reasoning.effort;
+            delete json.reasoning;
+            modified = true;
+          }
         }
 
         // Strip prior reasoning items from input history to prevent HTTP 400

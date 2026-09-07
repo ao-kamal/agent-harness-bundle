@@ -15,6 +15,23 @@ hooks = true
 
 # Responses backend (native OpenAI responses stream)
 [model.muse-spark-contributor]
+model = "muse-spark-1.3-contributor"
+base_url = "http://127.0.0.1:5210/v1"
+name = "Muse Spark 1.3 Contributor (OpenCode Go)"
+api_backend = "responses"
+api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
+env_key = "OPENCODE_API_KEY"
+context_window = 1048576
+max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
+
+[model."muse-spark-1.3-free"]
 model = "muse-spark-1.3-contributor-free"
 base_url = "http://127.0.0.1:5210/v1"
 name = "Muse Spark 1.3 Contributor Free (OpenCode Zen)"
@@ -23,18 +40,15 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
-[model."muse-spark-1.3"]
-model = "muse-spark-1.3-contributor-free"
-base_url = "http://127.0.0.1:5210/v1"
-name = "Muse Spark 1.3 Contributor Free (OpenCode Zen)"
-api_backend = "responses"
-api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
-env_key = "OPENCODE_API_KEY"
-context_window = 1048576
-max_completion_tokens = 131072
-
-[model."muse-spark-1.2"]
+[model."muse-spark-1.2-free"]
 model = "muse-spark-1.2-contributor-free"
 base_url = "http://127.0.0.1:5210/v1"
 name = "Muse Spark 1.2 Contributor Free (OpenCode Zen)"
@@ -43,6 +57,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 
 [model."gpt-5.6-luna"]
@@ -54,6 +75,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model.deepseek-v4-pro]
 model = "deepseek-v4-pro"
@@ -64,6 +92,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model.deepseek-v4-flash]
 model = "deepseek-v4-flash"
@@ -74,6 +109,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model.deepseek-v4-flash-vision-exp]
 model = "deepseek-v4-flash-vision-exp"
@@ -115,6 +157,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."qwen3.8-flash"]
 model = "qwen3.8-flash"
@@ -125,6 +174,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."qwen3.7-max"]
 model = "qwen3.7-max"
@@ -176,6 +232,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."glm-5.3-flash"]
 model = "glm-5.3-flash"
@@ -186,6 +249,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."glm-5.2"]
 model = "glm-5.2"
@@ -227,6 +297,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."kimi-k2.7-code"]
 model = "kimi-k2.7-code"
@@ -237,6 +314,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."kimi-k2.6"]
 model = "kimi-k2.6"
@@ -268,6 +352,13 @@ api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
 env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
 
 [model."minimax-m2.5"]
 model = "minimax-m2.5"
