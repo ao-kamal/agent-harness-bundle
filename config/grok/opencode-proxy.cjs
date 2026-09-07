@@ -62,6 +62,38 @@ process.on('unhandledRejection', (reason) => {
 const TARGET_HOST = 'opencode.ai';
 const PORT = 5210;
 
+// Resolve official OpenCode CLI version and user agent
+let opencodeVersion = '1.18.25';
+try {
+  const pkgPath = 'C:\\Users\\USER\\AppData\\Roaming\\npm\\node_modules\\opencode-ai\\package.json';
+  if (fs.existsSync(pkgPath)) {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    if (pkg.version) opencodeVersion = pkg.version;
+  }
+} catch (e) {}
+
+const OFFICIAL_USER_AGENT = `opencode/${opencodeVersion}`;
+const OFFICIAL_CLIENT = 'cli';
+
+function applyOpenCodeHeaders(headers, clientReqHeaders, parsedJson) {
+  // Enforce session affinity (required by OpenCode Go as of 09/06)
+  headers['x-opencode-session'] = resolveSessionId(clientReqHeaders, parsedJson);
+  // Official OpenCode CLI identity headers
+  headers['x-opencode-client'] = OFFICIAL_CLIENT;
+  headers['user-agent'] = OFFICIAL_USER_AGENT;
+
+  // Request tracking ID
+  const reqId = clientReqHeaders['x-opencode-request'] || clientReqHeaders['x-request-id'] || clientReqHeaders['x-grok-req-id'] || crypto.randomUUID();
+  headers['x-opencode-request'] = reqId;
+
+  // Strip Grok/xAI specific telemetry headers so requests match native OpenCode CLI
+  for (const key of Object.keys(headers)) {
+    if (key.startsWith('x-grok-') || key.startsWith('x-xai-') || key === 'x-authenticateresponse') {
+      delete headers[key];
+    }
+  }
+}
+
 const server = http.createServer((clientReq, clientRes) => {
   let subPath = clientReq.url;
   if (subPath.startsWith('/v1')) {
@@ -87,10 +119,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
   // Merge catalogs for GET /v1/models
   if (clientReq.method === 'GET' && (subPath === '/models' || subPath === '/models/')) {
-    headers['x-opencode-session'] = resolveSessionId(clientReq.headers, null);
-    if (!headers['user-agent'] || headers['user-agent'].startsWith('curl/')) {
-      headers['user-agent'] = 'grok-shell/1.0.13 (windows; x86_64)';
-    }
+    applyOpenCodeHeaders(headers, clientReq.headers, null);
 
     const fetchCatalog = (path) => new Promise(resolve => {
       const r = https.request({
@@ -199,13 +228,8 @@ const server = http.createServer((clientReq, clientRes) => {
       headers['content-length'] = Buffer.byteLength(finalBody);
     }
 
-    // Enforce x-opencode-session header (required by OpenCode Go as of 09/06 for session affinity & caching)
-    headers['x-opencode-session'] = resolveSessionId(clientReq.headers, parsedJson);
-
-    // Normalize User-Agent to grok-shell if missing or curl
-    if (!headers['user-agent'] || headers['user-agent'].startsWith('curl/')) {
-      headers['user-agent'] = 'grok-shell/1.0.13 (windows; x86_64)';
-    }
+    // Apply official OpenCode identity and session headers, stripping Grok client metadata
+    applyOpenCodeHeaders(headers, clientReq.headers, parsedJson);
 
     const targetPath = targetBase + subPath;
     const options = {
@@ -216,7 +240,11 @@ const server = http.createServer((clientReq, clientRes) => {
       headers: headers
     };
 
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Outgoing Headers: ${JSON.stringify(headers)}\n`);
+    const logHeaders = { ...headers };
+    if (logHeaders.authorization) {
+      logHeaders.authorization = logHeaders.authorization.slice(0, 15) + '...';
+    }
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Outgoing Headers: ${JSON.stringify(logHeaders)}\n`);
 
     const proxyReq = https.request(options, (proxyRes) => {
       const contentType = proxyRes.headers['content-type'] || '';
