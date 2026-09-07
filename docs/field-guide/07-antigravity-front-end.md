@@ -21,10 +21,27 @@ Does change:
 |-------|-----------|---------|
 | Skills | `~/.claude/skills/` | junction `~/.gemini/antigravity-cli/skills` |
 | Rules | `~/.claude/rules/` | junction `~/.gemini/antigravity-cli/rules` |
+| Keybindings | `config/antigravity/keybindings.json` | copied `~/.gemini/antigravity-cli/keybindings.json` |
 | Project contract | repo `AGENTS.md` | none |
 | Auth / TUI | Antigravity keyring / first `agy` login | none |
 
 Do not copy the skills tree. If you already have a real folder at `~/.gemini/antigravity-cli/skills`, move it aside and re-run `install\install-antigravity.ps1`.
+
+## Keybindings & Voice Dictation (Wispr Flow)
+
+By default, `agy.exe` binds both `ctrl+v` and `alt+v` to `edit.paste` (`KeyPaste`), which routes to `handlePasteMedia` (iTerm2 image upload). On non-iTerm2 Windows terminals (WezTerm, Windows Terminal), this handler errors out and swallows `ctrl+v`, completely breaking standard text paste and voice dictation apps (like Wispr Flow) that paste via clipboard + simulated `Ctrl+V`.
+
+`install\install-antigravity.ps1` deploys `~/.gemini/antigravity-cli/keybindings.json`:
+
+```json
+{
+  "edit.paste": [
+    "alt+v"
+  ]
+}
+```
+
+This releases `ctrl+v` so it falls through to the textarea prompt for normal clipboard insertion, while preserving image paste on `alt+v`.
 
 ## Commands
 

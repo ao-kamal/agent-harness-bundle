@@ -13,6 +13,7 @@ powershell -ExecutionPolicy Bypass -File install\install-antigravity.ps1
 1. Requires `~/.claude/skills` (run `install\install.ps1` first).
 2. Junctions `~/.gemini/antigravity-cli/skills` → `~/.claude/skills`.
 3. Junctions `~/.gemini/antigravity-cli/rules` → `~/.claude/rules`.
+4. Deploys `~/.gemini/antigravity-cli/keybindings.json` to remap `edit.paste` to `alt+v`, unintercepting `ctrl+v` for Wispr Flow dictation and standard terminal paste.
 
 It does **not** copy skills, write a second AGENTS.md tree, or invent an ntm agent type.
 
