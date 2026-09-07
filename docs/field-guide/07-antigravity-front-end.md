@@ -29,19 +29,11 @@ Do not copy the skills tree. If you already have a real folder at `~/.gemini/ant
 
 ## Keybindings & Voice Dictation (Wispr Flow)
 
-By default, `agy.exe` binds both `ctrl+v` and `alt+v` to `edit.paste` (`KeyPaste`), which routes to `handlePasteMedia` (iTerm2 image upload). On non-iTerm2 Windows terminals (WezTerm, Windows Terminal), this handler errors out and swallows `ctrl+v`, completely breaking standard text paste and voice dictation apps (like Wispr Flow) that paste via clipboard + simulated `Ctrl+V`.
+Voice dictation (Wispr Flow) and clipboard paste in `agy` on Windows encounter two distinct layers:
 
-`install\install-antigravity.ps1` deploys `~/.gemini/antigravity-cli/keybindings.json`:
-
-```json
-{
-  "edit.paste": [
-    "alt+v"
-  ]
-}
-```
-
-This releases `ctrl+v` so it falls through to the textarea prompt for normal clipboard insertion, while preserving image paste on `alt+v`.
+1. **`edit.paste` key interception:** By default, `agy.exe` binds `ctrl+v` to `edit.paste` (`KeyPaste`), which routes to `handlePasteMedia` (iTerm2 image upload). On non-iTerm2 Windows terminals (WezTerm, Windows Terminal), this handler errors out and swallows `ctrl+v`. Deploying `keybindings.json` moves `edit.paste` to `alt+v` so `ctrl+v` is not swallowed.
+2. **Bracketed paste drop:** Bubbletea's renderer in `agy` sends `\x1b[?2004h` (Bracketed Paste Mode). However, `PromptModel.Update` in `agy.exe` only handles `*tea.KeyMsg` and completely drops `tea.PasteMsg`. When terminal emulators (like WezTerm) paste clipboard text wrapped in `\x1b[200~...\x1b[201~`, `agy` silently drops the entire paste!
+3. **Unbracketed stream solution:** `agy` includes built-in `PromptModel.absorbUnbracketedPasteNewline` specifically designed to handle raw character streams. WezTerm's `paste_unbracketed` callback uses `getclip.exe` (a 4.5KB C# P/Invoke helper in `~/.local/agy/bin`) and `pane:send_text(stdout)` to stream clipboard text directly as runes. This makes Wispr Flow, `Ctrl+V`, `Shift+Insert`, and right-click paste work seamlessly across `agy`, Grok CLI, PowerShell, and WSL.
 
 ## Commands
 

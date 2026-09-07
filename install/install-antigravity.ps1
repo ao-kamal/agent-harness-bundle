@@ -114,6 +114,26 @@ if ($Update -or -not ($state.completed -contains 'keybindings')) {
     Complete-Stage $state 'keybindings'
 }
 
+if ($Update -or -not ($state.completed -contains 'getclip')) {
+    Write-Info "deploying getclip.exe (unbracketed paste helper for agy CLI)"
+    $binDir = Join-Path $env:LOCALAPPDATA 'agy\bin'
+    New-Item -ItemType Directory -Force $binDir | Out-Null
+    $dstClip = Join-Path $binDir 'getclip.exe'
+    $srcClip = Join-Path $script:BundleRoot 'config\antigravity\getclip.exe'
+    $srcCs = Join-Path $script:BundleRoot 'config\antigravity\GetClip.cs'
+    if (Test-Path $srcClip) {
+        Copy-Item $srcClip $dstClip -Force
+        Write-Ok "copied getclip.exe -> $dstClip"
+    } elseif (Test-Path $srcCs) {
+        $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+        if (Test-Path $csc) {
+            & $csc /nologo /optimize /target:exe /out:$dstClip $srcCs
+            Write-Ok "compiled and installed getclip.exe -> $dstClip"
+        }
+    }
+    Complete-Stage $state 'getclip'
+}
+
 Write-Ok "Antigravity adapter done. Sit in agy. Edit ~/.claude only."
 Write-Info "ntm panes: ntm spawn <project> --agy=N  (already in official ntm)"
 Write-Info "Do not copy skills into ~/.gemini. Re-run this script if a junction is missing."

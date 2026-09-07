@@ -38,6 +38,18 @@ config.audible_bell = "Disabled"
 -- Kitty keyboard protocol: needed for Ctrl+Enter (Grok interject) and other modified Enter keys.
 config.enable_kitty_keyboard = true
 
+local localappdata = os.getenv("LOCALAPPDATA") or "C:\\Users\\USER\\AppData\\Local"
+local getclip = localappdata .. "\\agy\\bin\\getclip.exe"
+
+local function paste_unbracketed(window, pane)
+	local success, stdout, stderr = wezterm.run_child_process({ getclip })
+	if success and stdout and #stdout > 0 then
+		pane:send_text(stdout)
+	else
+		window:perform_action(wezterm.action.PasteFrom("Clipboard"), pane)
+	end
+end
+
 -- Native panes when you want splits OUTSIDE tmux (tmux inside WSL keeps its own keys):
 -- ALT+Shift+% vertical / ALT+Shift+" horizontal are awkward on some layouts; use these:
 config.keys = {
@@ -52,12 +64,11 @@ config.keys = {
 		mods = "CTRL",
 		action = wezterm.action.SendKey({ key = "w", mods = "CTRL" }),
 	},
-	-- Paste: make Wispr Flow (and any clipboard paste) just work
-	-- Wispr injects via clipboard + Ctrl+V; WezTerm default is Ctrl+Shift+V
-	-- so we bind BOTH plus Shift+Insert for good measure
-	{ key = "V", mods = "CTRL", action = wezterm.action.PasteFrom("Clipboard") },
-	{ key = "V", mods = "CTRL|SHIFT", action = wezterm.action.PasteFrom("Clipboard") },
-	{ key = "Insert", mods = "SHIFT", action = wezterm.action.PasteFrom("Clipboard") },
+	-- Paste: make Wispr Flow (and any clipboard paste) work everywhere including agy CLI
+	-- agy CLI drops bracketed paste (\x1b[200~); sending text directly via getclip.exe bypasses this
+	{ key = "V", mods = "CTRL", action = wezterm.action_callback(paste_unbracketed) },
+	{ key = "V", mods = "CTRL|SHIFT", action = wezterm.action_callback(paste_unbracketed) },
+	{ key = "Insert", mods = "SHIFT", action = wezterm.action_callback(paste_unbracketed) },
 	{ key = "C", mods = "CTRL|SHIFT", action = wezterm.action.CopyTo("Clipboard") },
 	{ key = "C", mods = "CTRL", action = wezterm.action.CopyTo("ClipboardAndPrimarySelection") },
 	{
@@ -91,7 +102,7 @@ config.mouse_bindings = {
 			if has_selection then
 				window:perform_action(wezterm.action.CopyTo("Clipboard"), pane)
 			else
-				window:perform_action(wezterm.action.PasteFrom("Clipboard"), pane)
+				paste_unbracketed(window, pane)
 			end
 		end),
 	},
