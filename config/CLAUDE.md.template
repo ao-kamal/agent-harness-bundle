@@ -92,3 +92,4 @@ Key methodology docs (all in `ObsidianVault/References/`):
 - **`tools-reference.md`** — per-tool operational reference (cass, cm, br, bv, jsm, caam, ms, firecrawl developer index, fw, fmd, defuddle, firecrawl, slb, pcr, srps, branch-back),data-heavy MCP guidance, web-testing viewport standard, CodeRabbit review policy. Tool updates follow `ObsidianVault/References/tooling-update-runbook.md`.
 - **`mcp-and-services.md`** — MCP scopes + current registration commands, Agent Mail architecture (WSL server, 127.0.0.1 convention), Morph MCP usage, n8n workflow automation.
 - **`developer-index.md`** — the Firecrawl Developer Index documentation-fetch contract.
+- **`epistemic-inquiry.md`** — epistemic inquiry & research discipline: the Anti-Witness-Leading Rule (radical inquiry, territory over destination) and the Anti-Caricature Rule (ground truth over tropes across business and systems modeling).
