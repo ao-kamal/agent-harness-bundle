@@ -104,18 +104,31 @@ const server = http.createServer((clientReq, clientRes) => {
   delete headers['content-length'];
   delete headers['transfer-encoding'];
 
-  // Enforce active OpenCode API key from environment or config.toml
-  let activeKey = process.env.OPENCODE_API_KEY;
-  if (!activeKey || !activeKey.startsWith('sk-')) {
-    try {
-      const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
-      const m = configText.match(/api_key\s*=\s*"([^"]+)"/);
-      if (m) activeKey = m[1];
-    } catch (e) {}
+  // Enforce active OpenCode API key from config.toml (prioritized for live reloading) or environment
+  let activeKey = null;
+  try {
+    const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
+    const m = configText.match(/api_key\s*=\s*"([^"]+)"/);
+    if (m && m[1].startsWith('sk-')) activeKey = m[1];
+  } catch (e) {}
+  if (!activeKey) {
+    activeKey = process.env.OPENCODE_API_KEY;
   }
   if (activeKey) {
     headers['authorization'] = `Bearer ${activeKey}`;
   }
+
+  clientReq.on('error', (err) => {
+    try {
+      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] ClientReq Error: ${err.message}\n`);
+    } catch (e) {}
+  });
+
+  clientRes.on('error', (err) => {
+    try {
+      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] ClientRes Error: ${err.message}\n`);
+    } catch (e) {}
+  });
 
   // Merge catalogs for GET /v1/models
   if (clientReq.method === 'GET' && (subPath === '/models' || subPath === '/models/')) {
@@ -251,6 +264,16 @@ const server = http.createServer((clientReq, clientRes) => {
       const isSSE = contentType.includes('text/event-stream');
 
       if (!isSSE) {
+        let errChunks = [];
+        proxyRes.on('data', c => errChunks.push(c));
+        proxyRes.on('end', () => {
+          if (proxyRes.statusCode >= 400) {
+            const errBody = Buffer.concat(errChunks).toString('utf8');
+            try {
+              fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
+            } catch (e) {}
+          }
+        });
         clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(clientRes);
         return;
@@ -305,6 +328,17 @@ const server = http.createServer((clientReq, clientRes) => {
   });
 });
 
+server.on('clientError', (err, socket) => {
+  try {
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Server ClientError: ${err.message}\n`);
+  } catch (e) {}
+  if (err.code === 'ECONNRESET' || !socket.writable) {
+    return;
+  }
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`OpenCode Zen Filter Proxy listening on http://127.0.0.1:${PORT}`);
 });
+
