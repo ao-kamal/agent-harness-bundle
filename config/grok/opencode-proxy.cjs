@@ -203,22 +203,40 @@ function translateAnthropicRequest(body) {
 
   // Strip prefixes added for Claude Code regex compatibility
   if (model.startsWith('anthropic/')) model = model.slice(10);
-  if (model.startsWith('claude-muse-spark-1.3-free') || model === 'claude-muse-spark-1.3-free') {
-    model = 'muse-spark-1.3-contributor-free';
-  } else if (model.startsWith('claude-muse-spark')) {
-    model = 'muse-spark-1.3-contributor';
-  }
 
-  if (model === 'muse-spark-1.3-free' || model.includes('contributor-free') || model.endsWith('-free')) {
+  if (model === 'claude-muse-spark-1.3-free' || model === 'muse-spark-1.3-free' || model.includes('contributor-free') || model.endsWith('-free')) {
     model = 'muse-spark-1.3-contributor-free';
     targetBase = '/zen/v1';
   } else if (model.includes('muse-spark')) {
     model = 'muse-spark-1.3-contributor';
     targetBase = '/zen/go/v1';
+  } else if (model.includes('deepseek-v4.1') || model.includes('deepseek-4.1')) {
+    model = 'deepseek-v4.1-flash';
+    targetBase = '/zen/go/v1';
+  } else if (model.includes('deepseek-v4-pro') || model.includes('deepseek-4-pro')) {
+    model = 'deepseek-v4-pro';
+    targetBase = '/zen/go/v1';
+  } else if (model.includes('deepseek-v4-flash') || model.includes('deepseek-4-flash')) {
+    model = 'deepseek-v4-flash';
+    targetBase = '/zen/go/v1';
+  } else if (model.includes('deepseek-flash') || model.includes('deepseek')) {
+    model = 'deepseek-flash';
+    targetBase = '/zen/go/v1';
+  } else if (model.includes('grok-4.6')) {
+    model = 'grok-4.6';
+    targetBase = '/zen/go/v1';
+  } else if (model.includes('grok-4.5')) {
+    model = 'grok-4.5';
+    targetBase = '/zen/go/v1';
+  } else if (model.includes('gpt-5.6-luna')) {
+    model = 'gpt-5.6-luna';
+    targetBase = '/zen/go/v1';
   } else if (['claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-opus-5', 'claude-haiku-4-5', 'claude-fable-5'].includes(model)) {
+    targetBase = '/zen/v1';
+  } else if (model.startsWith('claude-')) {
+    model = model.slice(7);
     targetBase = '/zen/go/v1';
   } else {
-    // Default any generic Claude alias to muse-spark-1.3-contributor
     model = 'muse-spark-1.3-contributor';
     targetBase = '/zen/go/v1';
   }
@@ -334,10 +352,13 @@ const server = http.createServer((clientReq, clientRes) => {
 
       // Add Claude Code filter-compatible aliases (Claude Code filters by /(claude|anthropic)/i)
       const claudeAliases = [
-        { id: 'claude-muse-spark-1.3-contributor', display_name: 'Muse Spark 1.3 Contributor (OpenCode Go)', description: 'OpenCode Go contributor model' },
+        { id: 'claude-muse-spark-1.3-contributor', display_name: 'Muse Spark 1.3 (OpenCode Go)', description: 'OpenCode Go Muse Spark 1.3 contributor model' },
         { id: 'claude-muse-spark-1.3-free', display_name: 'Muse Spark 1.3 Free (OpenCode Zen)', description: 'OpenCode Zen 100% free model' },
-        { id: 'anthropic/muse-spark-1.3-contributor', display_name: 'Muse Spark 1.3 Contributor (OpenCode Go)', description: 'OpenCode Go contributor model' },
-        { id: 'anthropic/muse-spark-1.3-contributor-free', display_name: 'Muse Spark 1.3 Contributor Free (OpenCode Zen)', description: 'OpenCode Zen free model' }
+        { id: 'claude-deepseek-v4.1-flash', display_name: 'DeepSeek 4.1 Flash (OpenCode Go)', description: 'OpenCode Go DeepSeek 4.1 Flash' },
+        { id: 'claude-deepseek-v4-pro', display_name: 'DeepSeek 4 Pro (OpenCode Go)', description: 'OpenCode Go DeepSeek 4 Pro' },
+        { id: 'claude-deepseek-v4-flash', display_name: 'DeepSeek 4 Flash (OpenCode Go)', description: 'OpenCode Go DeepSeek 4 Flash' },
+        { id: 'claude-grok-4.6', display_name: 'Grok 4.6 (OpenCode Go)', description: 'OpenCode Go Grok 4.6' },
+        { id: 'claude-gpt-5.6-luna', display_name: 'GPT-5.6 Luna (OpenCode Go)', description: 'OpenCode Go GPT-5.6 Luna' }
       ];
       for (const alias of claudeAliases) {
         map.set(alias.id, {
