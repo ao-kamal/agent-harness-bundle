@@ -1,183 +1,115 @@
-// OpenCode Zen Stream Filter, Reasoning Sanitizer & Claude Code Adapter Proxy
-//
-// Solves:
-// 1. Rust Serde SSE enum deserialization in Grok CLI (discards ping frames).
-// 2. Cross-turn reasoning history rejection in Grok CLI (sanitizes reasoning output items).
-// 3. Claude Code / Anthropic Messages API compatibility:
-//    - Translates POST /v1/messages into OpenCode /responses format
-//    - Converts OpenCode response stream into Anthropic SSE events in real-time
-//    - Handles multi-turn tool_use and tool_result blocks
-//    - Supports POST /v1/messages/count_tokens and GET /v1/models
-//    - Enforces OpenCode session affinity and official CLI headers
-
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const crypto = require('crypto');
 
-function resolveSessionId(clientHeaders, jsonBody) {
-  if (clientHeaders['x-opencode-session']) return clientHeaders['x-opencode-session'];
-  if (clientHeaders['x-grok-session-id']) return clientHeaders['x-grok-session-id'];
-  if (clientHeaders['x-grok-conv-id']) return clientHeaders['x-grok-conv-id'];
-  if (clientHeaders['x-session-id']) return clientHeaders['x-session-id'];
-  if (clientHeaders['x-conversation-id']) return clientHeaders['x-conversation-id'];
-  if (clientHeaders['x-claude-session-id']) return clientHeaders['x-claude-session-id'];
-  if (clientHeaders['x-claude-code-session-id']) return clientHeaders['x-claude-code-session-id'];
-
-  if (jsonBody) {
-    if (typeof jsonBody.conversation_id === 'string' && jsonBody.conversation_id) {
-      return jsonBody.conversation_id;
-    }
-    if (typeof jsonBody.session_id === 'string' && jsonBody.session_id) {
-      return jsonBody.session_id;
-    }
-    if (Array.isArray(jsonBody.messages) && jsonBody.messages.length > 0) {
-      const firstMsg = JSON.stringify(jsonBody.messages[0]);
-      return 'sess_' + crypto.createHash('sha256').update(firstMsg).digest('hex').slice(0, 32);
-    }
-    if (Array.isArray(jsonBody.input) && jsonBody.input.length > 0) {
-      const firstInput = JSON.stringify(jsonBody.input[0]);
-      return 'sess_' + crypto.createHash('sha256').update(firstInput).digest('hex').slice(0, 32);
-    }
-  }
-
-  return 'sess_' + crypto.randomUUID();
-}
-
-process.on('uncaughtException', (err) => {
-  try {
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UncaughtException: ${err.message}\n${err.stack}\n`);
-  } catch (e) {}
-});
-
-process.on('unhandledRejection', (reason) => {
-  try {
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UnhandledRejection: ${reason}\n`);
-  } catch (e) {}
-});
-
-const TARGET_HOST = 'opencode.ai';
 const PORT = 5210;
+const TARGET_HOST = 'opencode.ai';
 
-// Resolve official OpenCode CLI version and user agent
-let opencodeVersion = '1.18.25';
-try {
-  const pkgPath = 'C:\\Users\\USER\\AppData\\Roaming\\npm\\node_modules\\opencode-ai\\package.json';
-  if (fs.existsSync(pkgPath)) {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    if (pkg.version) opencodeVersion = pkg.version;
-  }
-} catch (e) {}
+const GO_MODELS_LIST = [
+  "minimax-m3", "minimax-m2.7", "minimax-m2.5", "kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "longcat-2.0", "kimi-k2.5",
+  "glm-5.2", "glm-5.3-flash", "glm-5.3", "glm-5.1", "glm-5", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash",
+  "deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp", "qwen3.7-max", "qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus",
+  "qwen3.6-plus", "qwen3.5-plus", "mimo-v2-pro", "mimo-v2-omni", "mimo-v2.5-pro", "mimo-v2.5", "hy4-preview", "hy3",
+  "hy3-preview", "gpt-5.6-luna", "grok-4.5", "grok-4.6", "muse-spark-1.3-contributor", "muse-spark-1.2-contributor", "omen-alpha"
+];
+const GO_MODELS_SET = new Set(GO_MODELS_LIST);
 
-const OFFICIAL_USER_AGENT = `opencode/${opencodeVersion}`;
-const OFFICIAL_CLIENT = 'cli';
+const RESPONSES_MODELS_SET = new Set([
+  'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor', 'muse-spark-1.3-contributor-free', 'muse-spark-1.2-contributor-free',
+  'muse-spark-1.3', 'muse-spark-1.2',
+  'deepseek-v4.1-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-flash',
+  'grok-4.6', 'gpt-5.6-luna',
+  'claude-fable-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-opus-4-5',
+  'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-sonnet-4', 'claude-haiku-4-5'
+]);
 
-function applyOpenCodeHeaders(headers, clientReqHeaders, parsedJson) {
-  // Enforce session affinity (required by OpenCode Go as of 09/06)
-  headers['x-opencode-session'] = resolveSessionId(clientReqHeaders, parsedJson);
-  // Official OpenCode CLI identity headers
-  headers['x-opencode-client'] = OFFICIAL_CLIENT;
-  headers['user-agent'] = OFFICIAL_USER_AGENT;
-
-  // Request tracking ID
-  const reqId = clientReqHeaders['x-opencode-request'] || clientReqHeaders['x-request-id'] || clientReqHeaders['x-grok-req-id'] || crypto.randomUUID();
-  headers['x-opencode-request'] = reqId;
-
-  // Strip client telemetry & Anthropic specific headers so upstream gets standard OpenCode CLI headers
-  for (const key of Object.keys(headers)) {
-    if (
-      key.startsWith('x-grok-') ||
-      key.startsWith('x-xai-') ||
-      key.startsWith('anthropic-') ||
-      key === 'x-api-key' ||
-      key === 'x-authenticateresponse'
-    ) {
-      delete headers[key];
+function routeAnthropicModel(clientModel) {
+  let model = clientModel || 'muse-spark-1.3-contributor';
+  if (model.startsWith('anthropic/')) model = model.slice(10);
+  if (model.startsWith('claude-')) {
+    if (/^claude-(opus|sonnet|haiku|fable)/i.test(model)) {
+      // Native OpenCode Claude model
+    } else if (model.includes('muse-spark-1.3-free') || model.includes('contributor-free')) {
+      model = 'muse-spark-1.3-contributor-free';
+    } else if (model.includes('muse-spark')) {
+      model = 'muse-spark-1.3-contributor';
+    } else {
+      model = model.slice(7);
     }
+  }
+
+  let targetBase = '/zen/go/v1';
+  if (model.endsWith('-free') || model.includes('contributor-free') || !GO_MODELS_SET.has(model)) {
+    targetBase = '/zen/v1';
+  } else {
+    targetBase = '/zen/go/v1';
+  }
+
+  const endpointType = RESPONSES_MODELS_SET.has(model) ? 'responses' : 'chat';
+  return { model, targetBase, endpointType };
+}
+
+function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
+  headers['user-agent'] = 'opencode/1.18.25';
+  headers['x-opencode-client'] = 'cli';
+  headers['x-opencode-session'] = 'opencode-cli-session';
+
+  if (convertedPayload && convertedPayload.model) {
+    headers['x-opencode-model'] = convertedPayload.model;
+  }
+  if (clientReqHeaders && clientReqHeaders['x-opencode-directory']) {
+    headers['x-opencode-directory'] = clientReqHeaders['x-opencode-directory'];
   }
 }
 
-// Convert Anthropic Messages request into OpenCode Responses API shape
-function translateAnthropicRequest(body) {
+function translateAnthropicToResponses(body, model) {
+  const input = [];
   let instructions = '';
-  if (typeof body.system === 'string') {
-    instructions = body.system;
-  } else if (Array.isArray(body.system)) {
-    instructions = body.system.map(b => (typeof b === 'string' ? b : (b.text || ''))).join('\n');
+
+  if (body.system) {
+    if (typeof body.system === 'string') {
+      instructions = body.system;
+    } else if (Array.isArray(body.system)) {
+      instructions = body.system.map(s => s.text || '').join('\n');
+    }
   }
 
-  const input = [];
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
-      if (msg.role === 'user') {
-        if (typeof msg.content === 'string') {
-          input.push({
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: msg.content }]
-          });
-        } else if (Array.isArray(msg.content)) {
-          const contentParts = [];
-          for (const block of msg.content) {
-            if (block.type === 'tool_result') {
-              let outStr = '';
-              if (typeof block.content === 'string') {
-                outStr = block.content;
-              } else if (Array.isArray(block.content)) {
-                outStr = block.content.map(c => (typeof c === 'string' ? c : (c.text || JSON.stringify(c)))).join('\n');
-              } else if (block.content) {
-                outStr = JSON.stringify(block.content);
-              }
-              if (block.is_error) outStr = `[Error] ${outStr}`;
-              input.push({
-                type: 'function_call_output',
-                call_id: block.tool_use_id,
-                output: outStr
-              });
-            } else if (block.type === 'text') {
-              contentParts.push({ type: 'input_text', text: block.text || '' });
-            } else if (block.type === 'image' && block.source) {
-              contentParts.push({
-                type: 'input_image',
-                image_url: `data:${block.source.media_type};base64,${block.source.data}`
-              });
-            }
-          }
-          if (contentParts.length > 0) {
+      if (typeof msg.content === 'string') {
+        input.push({
+          type: 'message',
+          role: msg.role,
+          content: [{ type: 'input_text', text: msg.content }]
+        });
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'text') {
             input.push({
               type: 'message',
-              role: 'user',
-              content: contentParts
+              role: msg.role,
+              content: [{ type: 'input_text', text: block.text }]
             });
-          }
-        }
-      } else if (msg.role === 'assistant') {
-        if (typeof msg.content === 'string') {
-          input.push({
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: msg.content }]
-          });
-        } else if (Array.isArray(msg.content)) {
-          const textParts = [];
-          for (const block of msg.content) {
-            if (block.type === 'text') {
-              textParts.push({ type: 'output_text', text: block.text || '' });
-            } else if (block.type === 'tool_use') {
-              input.push({
-                type: 'function_call',
-                id: block.id,
-                call_id: block.id,
-                name: block.name,
-                arguments: typeof block.input === 'string' ? block.input : JSON.stringify(block.input || {})
-              });
-            }
-          }
-          if (textParts.length > 0) {
+          } else if (block.type === 'tool_use') {
             input.push({
-              type: 'message',
-              role: 'assistant',
-              content: textParts
+              type: 'function_call',
+              id: block.id,
+              call_id: block.id,
+              name: block.name,
+              arguments: typeof block.input === 'string' ? block.input : JSON.stringify(block.input || {})
+            });
+          } else if (block.type === 'tool_result') {
+            let resText = '';
+            if (typeof block.content === 'string') {
+              resText = block.content;
+            } else if (Array.isArray(block.content)) {
+              resText = block.content.map(c => c.text || JSON.stringify(c)).join('\n');
+            }
+            input.push({
+              type: 'function_call_output',
+              call_id: block.tool_use_id,
+              output: resText || 'ok'
             });
           }
         }
@@ -197,50 +129,6 @@ function translateAnthropicRequest(body) {
     }
   }
 
-  let clientModel = body.model || 'muse-spark-1.3-contributor';
-  let model = clientModel;
-  let targetBase = '/zen/go/v1';
-
-  // Strip prefixes added for Claude Code regex compatibility
-  if (model.startsWith('anthropic/')) model = model.slice(10);
-
-  if (model === 'claude-muse-spark-1.3-free' || model === 'muse-spark-1.3-free' || model.includes('contributor-free') || model.endsWith('-free')) {
-    model = 'muse-spark-1.3-contributor-free';
-    targetBase = '/zen/v1';
-  } else if (model.includes('muse-spark')) {
-    model = 'muse-spark-1.3-contributor';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('deepseek-v4.1') || model.includes('deepseek-4.1')) {
-    model = 'deepseek-v4.1-flash';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('deepseek-v4-pro') || model.includes('deepseek-4-pro')) {
-    model = 'deepseek-v4-pro';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('deepseek-v4-flash') || model.includes('deepseek-4-flash')) {
-    model = 'deepseek-v4-flash';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('deepseek-flash') || model.includes('deepseek')) {
-    model = 'deepseek-flash';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('grok-4.6')) {
-    model = 'grok-4.6';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('grok-4.5')) {
-    model = 'grok-4.5';
-    targetBase = '/zen/go/v1';
-  } else if (model.includes('gpt-5.6-luna')) {
-    model = 'gpt-5.6-luna';
-    targetBase = '/zen/go/v1';
-  } else if (['claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-opus-5', 'claude-haiku-4-5', 'claude-fable-5'].includes(model)) {
-    targetBase = '/zen/v1';
-  } else if (model.startsWith('claude-')) {
-    model = model.slice(7);
-    targetBase = '/zen/go/v1';
-  } else {
-    model = 'muse-spark-1.3-contributor';
-    targetBase = '/zen/go/v1';
-  }
-
   const converted = {
     model: model,
     stream: true,
@@ -249,12 +137,76 @@ function translateAnthropicRequest(body) {
   if (instructions) converted.instructions = instructions;
   if (tools.length > 0) converted.tools = tools;
 
-  return {
-    converted,
-    targetBase,
-    clientModel,
-    isStream: body.stream !== false
-  };
+  return converted;
+}
+
+function translateAnthropicToChat(body, model) {
+  const messages = [];
+
+  if (body.system) {
+    let sysText = typeof body.system === 'string' ? body.system : (body.system.map(s => s.text || '').join('\n'));
+    if (sysText) messages.push({ role: 'system', content: sysText });
+  }
+
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (typeof msg.content === 'string') {
+        messages.push({ role: msg.role, content: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        let textParts = [];
+        let toolCalls = [];
+        let toolResults = [];
+
+        for (const block of msg.content) {
+          if (block.type === 'text') {
+            textParts.push(block.text);
+          } else if (block.type === 'tool_use') {
+            toolCalls.push({
+              id: block.id,
+              type: 'function',
+              function: {
+                name: block.name,
+                arguments: typeof block.input === 'string' ? block.input : JSON.stringify(block.input || {})
+              }
+            });
+          } else if (block.type === 'tool_result') {
+            let resText = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+            toolResults.push({
+              role: 'tool',
+              tool_call_id: block.tool_use_id,
+              content: resText || 'ok'
+            });
+          }
+        }
+
+        if (toolResults.length > 0) {
+          for (const tr of toolResults) messages.push(tr);
+        } else {
+          const chatMsg = { role: msg.role };
+          if (textParts.length > 0 || toolCalls.length === 0) chatMsg.content = textParts.join('\n');
+          if (toolCalls.length > 0) chatMsg.tool_calls = toolCalls;
+          messages.push(chatMsg);
+        }
+      }
+    }
+  }
+
+  const payload = { model, messages, stream: true };
+  if (body.max_tokens) payload.max_tokens = body.max_tokens;
+  if (body.temperature !== undefined) payload.temperature = body.temperature;
+
+  if (Array.isArray(body.tools) && body.tools.length > 0) {
+    payload.tools = body.tools.map(t => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description || '',
+        parameters: t.input_schema || { type: 'object', properties: {} }
+      }
+    }));
+  }
+
+  return payload;
 }
 
 const server = http.createServer((clientReq, clientRes) => {
@@ -270,7 +222,6 @@ const server = http.createServer((clientReq, clientRes) => {
   delete headers['content-length'];
   delete headers['transfer-encoding'];
 
-  // Enforce active OpenCode API key from config.toml (prioritized for live reloading) or environment
   let activeKey = null;
   try {
     const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
@@ -296,7 +247,7 @@ const server = http.createServer((clientReq, clientRes) => {
     } catch (e) {}
   });
 
-  // Handle Anthropic token counting (POST /v1/messages/count_tokens)
+  // Token count mock endpoint (POST /v1/messages/count_tokens)
   if (clientReq.method === 'POST' && (cleanPath === '/messages/count_tokens' || cleanPath === '/messages/count_tokens/')) {
     const reqChunks = [];
     clientReq.on('data', c => reqChunks.push(c));
@@ -318,22 +269,28 @@ const server = http.createServer((clientReq, clientRes) => {
     return;
   }
 
-  // Merge catalogs for GET /v1/models (also used by Claude Code gateway model discovery)
+  // Model catalog endpoint (GET /v1/models) - dynamically exposes ALL OpenCode models
   if (clientReq.method === 'GET' && (cleanPath === '/models' || cleanPath === '/models/')) {
-    applyOpenCodeHeaders(headers, clientReq.headers, null);
-
-    const fetchCatalog = (path) => new Promise(resolve => {
+    const fetchCatalog = (p) => new Promise((resolve) => {
       const r = https.request({
         hostname: TARGET_HOST,
         port: 443,
-        path: path,
+        path: p,
         method: 'GET',
-        headers: headers
-      }, res => {
-        let b = '';
-        res.on('data', c => b += c);
+        headers: {
+          ...headers,
+          'user-agent': 'opencode/1.18.25',
+          'x-opencode-client': 'cli'
+        }
+      }, (res) => {
+        let d = '';
+        res.on('data', c => d += c);
         res.on('end', () => {
-          try { resolve(JSON.parse(b).data || []); } catch(e) { resolve([]); }
+          try {
+            resolve(JSON.parse(d).data || []);
+          } catch (e) {
+            resolve([]);
+          }
         });
       });
       r.on('error', () => resolve([]));
@@ -342,32 +299,35 @@ const server = http.createServer((clientReq, clientRes) => {
 
     Promise.all([fetchCatalog('/zen/go/v1/models'), fetchCatalog('/zen/v1/models')]).then(([go, zen]) => {
       const map = new Map();
+      const goIds = new Set(go.map(m => m.id));
+
       for (const m of [...go, ...zen]) {
         if (!map.has(m.id)) {
           const item = { ...m };
-          if (!item.display_name) item.display_name = item.name || item.id;
+          const tier = goIds.has(m.id) ? 'OpenCode Go' : 'OpenCode Zen';
+          if (!item.display_name) item.display_name = `${item.id} (${tier})`;
           map.set(item.id, item);
+
+          // Add claude- prefixed alias so Claude Code discovery filter /(claude|anthropic)/i matches it!
+          if (!/(claude|anthropic)/i.test(m.id)) {
+            const aliasId = `claude-${m.id}`;
+            map.set(aliasId, {
+              id: aliasId,
+              object: 'model',
+              display_name: `${m.id} (${tier})`,
+              description: `OpenCode ${tier} model ${m.id}`
+            });
+          }
         }
       }
 
-      // Add Claude Code filter-compatible aliases (Claude Code filters by /(claude|anthropic)/i)
-      const claudeAliases = [
-        { id: 'claude-muse-spark-1.3-contributor', display_name: 'Muse Spark 1.3 (OpenCode Go)', description: 'OpenCode Go Muse Spark 1.3 contributor model' },
-        { id: 'claude-muse-spark-1.3-free', display_name: 'Muse Spark 1.3 Free (OpenCode Zen)', description: 'OpenCode Zen 100% free model' },
-        { id: 'claude-deepseek-v4.1-flash', display_name: 'DeepSeek 4.1 Flash (OpenCode Go)', description: 'OpenCode Go DeepSeek 4.1 Flash' },
-        { id: 'claude-deepseek-v4-pro', display_name: 'DeepSeek 4 Pro (OpenCode Go)', description: 'OpenCode Go DeepSeek 4 Pro' },
-        { id: 'claude-deepseek-v4-flash', display_name: 'DeepSeek 4 Flash (OpenCode Go)', description: 'OpenCode Go DeepSeek 4 Flash' },
-        { id: 'claude-grok-4.6', display_name: 'Grok 4.6 (OpenCode Go)', description: 'OpenCode Go Grok 4.6' },
-        { id: 'claude-gpt-5.6-luna', display_name: 'GPT-5.6 Luna (OpenCode Go)', description: 'OpenCode Go GPT-5.6 Luna' }
-      ];
-      for (const alias of claudeAliases) {
-        map.set(alias.id, {
-          id: alias.id,
-          object: 'model',
-          display_name: alias.display_name,
-          description: alias.description
-        });
-      }
+      // Add alias for free Muse Spark
+      map.set('claude-muse-spark-1.3-free', {
+        id: 'claude-muse-spark-1.3-free',
+        object: 'model',
+        display_name: 'muse-spark-1.3-free (OpenCode Zen)',
+        description: 'OpenCode Zen 100% free model'
+      });
 
       const merged = { object: 'list', data: Array.from(map.values()) };
       const body = JSON.stringify(merged);
@@ -383,7 +343,7 @@ const server = http.createServer((clientReq, clientRes) => {
     return;
   }
 
-  // Handle Anthropic Messages API (POST /v1/messages) for Claude Code
+  // Anthropic Messages API (POST /v1/messages) for Claude Code
   if (clientReq.method === 'POST' && (cleanPath === '/messages' || cleanPath === '/messages/')) {
     const reqChunks = [];
     clientReq.on('data', chunk => reqChunks.push(chunk));
@@ -396,16 +356,29 @@ const server = http.createServer((clientReq, clientRes) => {
         return clientRes.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: e.message } }));
       }
 
-      const { converted, targetBase, clientModel, isStream } = translateAnthropicRequest(body);
-      const outgoingBody = Buffer.from(JSON.stringify(converted));
+      const clientModel = body.model || 'muse-spark-1.3-contributor';
+      const { model, targetBase, endpointType } = routeAnthropicModel(clientModel);
+      const isStream = body.stream !== false;
+
+      let outgoingPayload;
+      let targetPath;
+
+      if (endpointType === 'responses') {
+        outgoingPayload = translateAnthropicToResponses(body, model);
+        targetPath = `${targetBase}/responses`;
+      } else {
+        outgoingPayload = translateAnthropicToChat(body, model);
+        targetPath = `${targetBase}/chat/completions`;
+      }
+
+      const outgoingBody = Buffer.from(JSON.stringify(outgoingPayload));
 
       headers['content-type'] = 'application/json';
       headers['content-length'] = Buffer.byteLength(outgoingBody);
       headers['accept'] = 'text/event-stream';
 
-      applyOpenCodeHeaders(headers, clientReq.headers, converted);
+      applyOpenCodeHeaders(headers, clientReq.headers, outgoingPayload);
 
-      const targetPath = `${targetBase}/responses`;
       const options = {
         hostname: TARGET_HOST,
         port: 443,
@@ -414,9 +387,7 @@ const server = http.createServer((clientReq, clientRes) => {
         headers: headers
       };
 
-      const logHeaders = { ...headers };
-      if (logHeaders.authorization) logHeaders.authorization = logHeaders.authorization.slice(0, 15) + '...';
-      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] [Anthropic->OpenCode] Model: ${clientModel} -> ${converted.model} (${targetPath})\n`);
+      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] [Anthropic->OpenCode] Model: ${clientModel} -> ${model} (${targetPath}) [${endpointType}]\n`);
 
       const proxyReq = https.request(options, (proxyRes) => {
         if (proxyRes.statusCode >= 400) {
@@ -439,226 +410,404 @@ const server = http.createServer((clientReq, clientRes) => {
           return;
         }
 
-        if (isStream) {
-          clientRes.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
-          });
+        if (endpointType === 'chat') {
+          // Streaming chat completions to Anthropic SSE
+          if (isStream) {
+            clientRes.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive'
+            });
 
-          let buffer = '';
-          let msgId = 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-          let currentBlockIndex = -1;
-          let textBlockIndex = -1;
-          let toolBlockIndex = -1;
-          let hasToolCall = false;
-          let inTokens = 0;
-          let outTokens = 1;
-          let messageStarted = false;
+            let buffer = '';
+            let msgId = 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+            let firstChunk = true;
+            let blockIndex = 0;
+            let textBlockIndex = -1;
+            let toolBlockIndex = -1;
+            let hasToolCall = false;
+            let inTokens = 0;
+            let outTokens = 1;
 
-          proxyRes.on('data', (chunk) => {
-            buffer += chunk.toString('utf8');
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop();
+            proxyRes.on('data', chunk => {
+              buffer += chunk.toString('utf8');
+              const parts = buffer.split('\n\n');
+              buffer = parts.pop();
 
-            for (const part of parts) {
-              if (!part.trim()) continue;
-              const lines = part.split('\n');
-              const eventLine = lines.find(l => l.startsWith('event:'));
-              const dataLine = lines.find(l => l.startsWith('data:'));
-              if (!eventLine || !dataLine) continue;
-
-              const event = eventLine.replace('event:', '').trim();
-              if (event === 'ping') continue;
-
-              let data;
-              try {
-                data = JSON.parse(dataLine.replace('data:', '').trim());
-              } catch (e) {
-                continue;
-              }
-
-              if (event === 'response.created') {
-                if (data.response && data.response.id) {
-                  msgId = 'msg_' + data.response.id.replace('resp_', '');
-                }
-                if (data.response && data.response.usage) {
-                  inTokens = data.response.usage.input_tokens || 0;
-                }
-                if (!messageStarted) {
-                  messageStarted = true;
-                  clientRes.write(`event: message_start\ndata: ${JSON.stringify({
-                    type: 'message_start',
-                    message: {
-                      id: msgId,
-                      type: 'message',
-                      role: 'assistant',
-                      content: [],
-                      model: clientModel,
-                      stop_reason: null,
-                      stop_sequence: null,
-                      usage: { input_tokens: inTokens, output_tokens: 1 }
+              for (const part of parts) {
+                if (!part.trim()) continue;
+                const lines = part.split('\n');
+                for (const line of lines) {
+                  if (!line.startsWith('data:')) continue;
+                  const raw = line.slice(5).trim();
+                  if (!raw) continue;
+                  if (raw === '[DONE]') {
+                    if (textBlockIndex >= 0) {
+                      clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: textBlockIndex })}\n\n`);
+                      textBlockIndex = -1;
                     }
+                    if (toolBlockIndex >= 0) {
+                      clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: toolBlockIndex })}\n\n`);
+                      toolBlockIndex = -1;
+                    }
+                    const stopReason = hasToolCall ? 'tool_use' : 'end_turn';
+                    clientRes.write(`event: message_delta\ndata: ${JSON.stringify({
+                      type: 'message_delta',
+                      delta: { stop_reason: stopReason, stop_sequence: null },
+                      usage: { output_tokens: outTokens }
+                    })}\n\n`);
+                    clientRes.write(`event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`);
+                    return;
+                  }
+
+                  let data;
+                  try { data = JSON.parse(raw); } catch (e) { continue; }
+
+                  if (firstChunk) {
+                    firstChunk = false;
+                    if (data.id) msgId = 'msg_' + data.id.replace('chatcmpl-', '');
+                    if (data.usage && data.usage.prompt_tokens) inTokens = data.usage.prompt_tokens;
+                    clientRes.write(`event: message_start\ndata: ${JSON.stringify({
+                      type: 'message_start',
+                      message: {
+                        id: msgId,
+                        type: 'message',
+                        role: 'assistant',
+                        content: [],
+                        model: clientModel,
+                        stop_reason: null,
+                        stop_sequence: null,
+                        usage: { input_tokens: inTokens, output_tokens: 1 }
+                      }
+                    })}\n\n`);
+                  }
+
+                  if (data.usage && data.usage.completion_tokens) {
+                    outTokens = data.usage.completion_tokens;
+                  }
+
+                  const choice = data.choices && data.choices[0];
+                  if (!choice) continue;
+
+                  const delta = choice.delta;
+                  if (delta) {
+                    if (delta.content) {
+                      if (textBlockIndex < 0) {
+                        textBlockIndex = blockIndex++;
+                        clientRes.write(`event: content_block_start\ndata: ${JSON.stringify({
+                          type: 'content_block_start',
+                          index: textBlockIndex,
+                          content_block: { type: 'text', text: '' }
+                        })}\n\n`);
+                      }
+                      clientRes.write(`event: content_block_delta\ndata: ${JSON.stringify({
+                        type: 'content_block_delta',
+                        index: textBlockIndex,
+                        delta: { type: 'text_delta', text: delta.content }
+                      })}\n\n`);
+                    }
+
+                    if (Array.isArray(delta.tool_calls)) {
+                      for (const tc of delta.tool_calls) {
+                        if (tc.function && tc.function.name) {
+                          if (textBlockIndex >= 0) {
+                            clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: textBlockIndex })}\n\n`);
+                            textBlockIndex = -1;
+                          }
+                          hasToolCall = true;
+                          toolBlockIndex = blockIndex++;
+                          clientRes.write(`event: content_block_start\ndata: ${JSON.stringify({
+                            type: 'content_block_start',
+                            index: toolBlockIndex,
+                            content_block: {
+                              type: 'tool_use',
+                              id: tc.id || 'call_' + crypto.randomUUID().slice(0, 8),
+                              name: tc.function.name,
+                              input: {}
+                            }
+                          })}\n\n`);
+                        }
+                        if (tc.function && tc.function.arguments && toolBlockIndex >= 0) {
+                          clientRes.write(`event: content_block_delta\ndata: ${JSON.stringify({
+                            type: 'content_block_delta',
+                            index: toolBlockIndex,
+                            delta: { type: 'input_json_delta', partial_json: tc.function.arguments }
+                          })}\n\n`);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            });
+
+            proxyRes.on('error', () => { try { clientRes.end(); } catch (e) {} });
+            proxyRes.on('end', () => { try { clientRes.end(); } catch (e) {} });
+          } else {
+            // Non-stream chat completions
+            let buffer = '';
+            proxyRes.on('data', c => buffer += c.toString('utf8'));
+            proxyRes.on('end', () => {
+              let json;
+              try { json = JSON.parse(buffer); } catch (e) {
+                clientRes.writeHead(500, { 'Content-Type': 'application/json' });
+                return clientRes.end(JSON.stringify({ type: 'error', error: { message: buffer } }));
+              }
+              const choice = json.choices && json.choices[0];
+              const msg = choice?.message || {};
+              const content = [];
+              if (msg.content) content.push({ type: 'text', text: msg.content });
+              if (Array.isArray(msg.tool_calls)) {
+                for (const tc of msg.tool_calls) {
+                  let parsed = {};
+                  try { parsed = JSON.parse(tc.function.arguments); } catch (e) {}
+                  content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input: parsed });
+                }
+              }
+              const resObj = {
+                id: 'msg_' + (json.id || crypto.randomUUID()).replace('chatcmpl-', ''),
+                type: 'message',
+                role: 'assistant',
+                content: content,
+                model: clientModel,
+                stop_reason: (msg.tool_calls && msg.tool_calls.length > 0) ? 'tool_use' : 'end_turn',
+                stop_sequence: null,
+                usage: {
+                  input_tokens: json.usage?.prompt_tokens || 0,
+                  output_tokens: json.usage?.completion_tokens || 1
+                }
+              };
+              const outStr = JSON.stringify(resObj);
+              clientRes.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(outStr)
+              });
+              clientRes.end(outStr);
+            });
+          }
+        } else {
+          // OpenCode Responses stream to Anthropic SSE
+          if (isStream) {
+            clientRes.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive'
+            });
+
+            let buffer = '';
+            let msgId = 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+            let currentBlockIndex = -1;
+            let textBlockIndex = -1;
+            let toolBlockIndex = -1;
+            let hasToolCall = false;
+            let inTokens = 0;
+            let outTokens = 1;
+            let messageStarted = false;
+
+            proxyRes.on('data', (chunk) => {
+              buffer += chunk.toString('utf8');
+              const parts = buffer.split('\n\n');
+              buffer = parts.pop();
+
+              for (const part of parts) {
+                if (!part.trim()) continue;
+                const lines = part.split('\n');
+                const eventLine = lines.find(l => l.startsWith('event:'));
+                const dataLine = lines.find(l => l.startsWith('data:'));
+                if (!eventLine || !dataLine) continue;
+
+                const event = eventLine.replace('event:', '').trim();
+                if (event === 'ping') continue;
+
+                let data;
+                try {
+                  data = JSON.parse(dataLine.replace('data:', '').trim());
+                } catch (e) {
+                  continue;
+                }
+
+                if (event === 'response.created') {
+                  if (data.response && data.response.id) {
+                    msgId = 'msg_' + data.response.id.replace('resp_', '');
+                  }
+                  if (data.response && data.response.usage) {
+                    inTokens = data.response.usage.input_tokens || 0;
+                  }
+                  if (!messageStarted) {
+                    messageStarted = true;
+                    clientRes.write(`event: message_start\ndata: ${JSON.stringify({
+                      type: 'message_start',
+                      message: {
+                        id: msgId,
+                        type: 'message',
+                        role: 'assistant',
+                        content: [],
+                        model: clientModel,
+                        stop_reason: null,
+                        stop_sequence: null,
+                        usage: { input_tokens: inTokens, output_tokens: 1 }
+                      }
+                    })}\n\n`);
+                  }
+                } else if (event === 'response.output_item.added') {
+                  if (data.item && data.item.type === 'message') {
+                    currentBlockIndex++;
+                    textBlockIndex = currentBlockIndex;
+                    clientRes.write(`event: content_block_start\ndata: ${JSON.stringify({
+                      type: 'content_block_start',
+                      index: textBlockIndex,
+                      content_block: { type: 'text', text: '' }
+                    })}\n\n`);
+                  } else if (data.item && data.item.type === 'function_call') {
+                    currentBlockIndex++;
+                    toolBlockIndex = currentBlockIndex;
+                    hasToolCall = true;
+                    clientRes.write(`event: content_block_start\ndata: ${JSON.stringify({
+                      type: 'content_block_start',
+                      index: toolBlockIndex,
+                      content_block: {
+                        type: 'tool_use',
+                        id: data.item.call_id || data.item.id,
+                        name: data.item.name,
+                        input: {}
+                      }
+                    })}\n\n`);
+                  }
+                } else if (event === 'response.output_text.delta') {
+                  if (textBlockIndex >= 0 && data.delta) {
+                    clientRes.write(`event: content_block_delta\ndata: ${JSON.stringify({
+                      type: 'content_block_delta',
+                      index: textBlockIndex,
+                      delta: { type: 'text_delta', text: data.delta }
+                    })}\n\n`);
+                  }
+                } else if (event === 'response.function_call_arguments.delta') {
+                  if (toolBlockIndex >= 0 && data.delta) {
+                    clientRes.write(`event: content_block_delta\ndata: ${JSON.stringify({
+                      type: 'content_block_delta',
+                      index: toolBlockIndex,
+                      delta: { type: 'input_json_delta', partial_json: data.delta }
+                    })}\n\n`);
+                  }
+                } else if (event === 'response.output_item.done') {
+                  if (data.item && data.item.type === 'message' && textBlockIndex >= 0) {
+                    clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                      type: 'content_block_stop',
+                      index: textBlockIndex
+                    })}\n\n`);
+                    textBlockIndex = -1;
+                  } else if (data.item && data.item.type === 'function_call' && toolBlockIndex >= 0) {
+                    clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({
+                      type: 'content_block_stop',
+                      index: toolBlockIndex
+                    })}\n\n`);
+                    toolBlockIndex = -1;
+                  }
+                } else if (event === 'response.completed') {
+                  if (data.response && data.response.usage) {
+                    outTokens = data.response.usage.output_tokens || 1;
+                  }
+                  const stopReason = hasToolCall ? 'tool_use' : 'end_turn';
+                  clientRes.write(`event: message_delta\ndata: ${JSON.stringify({
+                    type: 'message_delta',
+                    delta: { stop_reason: stopReason, stop_sequence: null },
+                    usage: { output_tokens: outTokens }
+                  })}\n\n`);
+                  clientRes.write(`event: message_stop\ndata: ${JSON.stringify({
+                    type: 'message_stop'
                   })}\n\n`);
                 }
-              } else if (event === 'response.output_item.added') {
-                if (data.item && data.item.type === 'message') {
-                  currentBlockIndex++;
-                  textBlockIndex = currentBlockIndex;
-                  clientRes.write(`event: content_block_start\ndata: ${JSON.stringify({
-                    type: 'content_block_start',
-                    index: textBlockIndex,
-                    content_block: { type: 'text', text: '' }
-                  })}\n\n`);
-                } else if (data.item && data.item.type === 'function_call') {
-                  currentBlockIndex++;
-                  toolBlockIndex = currentBlockIndex;
-                  hasToolCall = true;
-                  clientRes.write(`event: content_block_start\ndata: ${JSON.stringify({
-                    type: 'content_block_start',
-                    index: toolBlockIndex,
-                    content_block: {
-                      type: 'tool_use',
+              }
+            });
+
+            proxyRes.on('error', () => {
+              try { clientRes.end(); } catch (e) {}
+            });
+
+            proxyRes.on('end', () => {
+              try { clientRes.end(); } catch (e) {}
+            });
+          } else {
+            // Non-streaming response buffer
+            let buffer = '';
+            let msgId = 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+            let accumulatedText = '';
+            const toolsCalled = [];
+            let currentTool = null;
+            let inTokens = 0;
+            let outTokens = 1;
+
+            proxyRes.on('data', chunk => {
+              buffer += chunk.toString('utf8');
+              const parts = buffer.split('\n\n');
+              buffer = parts.pop();
+
+              for (const part of parts) {
+                if (!part.trim()) continue;
+                const lines = part.split('\n');
+                const eventLine = lines.find(l => l.startsWith('event:'));
+                const dataLine = lines.find(l => l.startsWith('data:'));
+                if (!eventLine || !dataLine) continue;
+
+                const event = eventLine.replace('event:', '').trim();
+                if (event === 'ping') continue;
+
+                let data;
+                try { data = JSON.parse(dataLine.replace('data:', '').trim()); } catch (e) { continue; }
+
+                if (event === 'response.created') {
+                  if (data.response && data.response.id) msgId = 'msg_' + data.response.id.replace('resp_', '');
+                  if (data.response && data.response.usage) inTokens = data.response.usage.input_tokens || 0;
+                } else if (event === 'response.output_item.added') {
+                  if (data.item && data.item.type === 'function_call') {
+                    currentTool = {
                       id: data.item.call_id || data.item.id,
                       name: data.item.name,
-                      input: {}
-                    }
-                  })}\n\n`);
+                      arguments: ''
+                    };
+                    toolsCalled.push(currentTool);
+                  }
+                } else if (event === 'response.output_text.delta') {
+                  if (data.delta) accumulatedText += data.delta;
+                } else if (event === 'response.function_call_arguments.delta') {
+                  if (currentTool && data.delta) currentTool.arguments += data.delta;
+                } else if (event === 'response.completed') {
+                  if (data.response && data.response.usage) outTokens = data.response.usage.output_tokens || 1;
                 }
-              } else if (event === 'response.output_text.delta') {
-                if (textBlockIndex >= 0 && data.delta) {
-                  clientRes.write(`event: content_block_delta\ndata: ${JSON.stringify({
-                    type: 'content_block_delta',
-                    index: textBlockIndex,
-                    delta: { type: 'text_delta', text: data.delta }
-                  })}\n\n`);
-                }
-              } else if (event === 'response.function_call_arguments.delta') {
-                if (toolBlockIndex >= 0 && data.delta) {
-                  clientRes.write(`event: content_block_delta\ndata: ${JSON.stringify({
-                    type: 'content_block_delta',
-                    index: toolBlockIndex,
-                    delta: { type: 'input_json_delta', partial_json: data.delta }
-                  })}\n\n`);
-                }
-              } else if (event === 'response.output_item.done') {
-                if (data.item && data.item.type === 'message' && textBlockIndex >= 0) {
-                  clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({
-                    type: 'content_block_stop',
-                    index: textBlockIndex
-                  })}\n\n`);
-                  textBlockIndex = -1;
-                } else if (data.item && data.item.type === 'function_call' && toolBlockIndex >= 0) {
-                  clientRes.write(`event: content_block_stop\ndata: ${JSON.stringify({
-                    type: 'content_block_stop',
-                    index: toolBlockIndex
-                  })}\n\n`);
-                  toolBlockIndex = -1;
-                }
-              } else if (event === 'response.completed') {
-                if (data.response && data.response.usage) {
-                  outTokens = data.response.usage.output_tokens || 1;
-                }
-                const stopReason = hasToolCall ? 'tool_use' : 'end_turn';
-                clientRes.write(`event: message_delta\ndata: ${JSON.stringify({
-                  type: 'message_delta',
-                  delta: { stop_reason: stopReason, stop_sequence: null },
-                  usage: { output_tokens: outTokens }
-                })}\n\n`);
-                clientRes.write(`event: message_stop\ndata: ${JSON.stringify({
-                  type: 'message_stop'
-                })}\n\n`);
               }
-            }
-          });
-
-          proxyRes.on('error', () => {
-            try { clientRes.end(); } catch (e) {}
-          });
-
-          proxyRes.on('end', () => {
-            try { clientRes.end(); } catch (e) {}
-          });
-        } else {
-          // Non-streaming response buffer
-          let buffer = '';
-          let msgId = 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-          let accumulatedText = '';
-          const toolsCalled = [];
-          let currentTool = null;
-          let inTokens = 0;
-          let outTokens = 1;
-
-          proxyRes.on('data', chunk => {
-            buffer += chunk.toString('utf8');
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop();
-
-            for (const part of parts) {
-              if (!part.trim()) continue;
-              const lines = part.split('\n');
-              const eventLine = lines.find(l => l.startsWith('event:'));
-              const dataLine = lines.find(l => l.startsWith('data:'));
-              if (!eventLine || !dataLine) continue;
-
-              const event = eventLine.replace('event:', '').trim();
-              if (event === 'ping') continue;
-
-              let data;
-              try { data = JSON.parse(dataLine.replace('data:', '').trim()); } catch (e) { continue; }
-
-              if (event === 'response.created') {
-                if (data.response && data.response.id) msgId = 'msg_' + data.response.id.replace('resp_', '');
-                if (data.response && data.response.usage) inTokens = data.response.usage.input_tokens || 0;
-              } else if (event === 'response.output_item.added') {
-                if (data.item && data.item.type === 'function_call') {
-                  currentTool = {
-                    id: data.item.call_id || data.item.id,
-                    name: data.item.name,
-                    arguments: ''
-                  };
-                  toolsCalled.push(currentTool);
-                }
-              } else if (event === 'response.output_text.delta') {
-                if (data.delta) accumulatedText += data.delta;
-              } else if (event === 'response.function_call_arguments.delta') {
-                if (currentTool && data.delta) currentTool.arguments += data.delta;
-              } else if (event === 'response.completed') {
-                if (data.response && data.response.usage) outTokens = data.response.usage.output_tokens || 1;
-              }
-            }
-          });
-
-          proxyRes.on('end', () => {
-            const contentBlocks = [];
-            if (accumulatedText) contentBlocks.push({ type: 'text', text: accumulatedText });
-            for (const t of toolsCalled) {
-              let parsedInput = {};
-              try { parsedInput = JSON.parse(t.arguments || '{}'); } catch (e) {}
-              contentBlocks.push({
-                type: 'tool_use',
-                id: t.id,
-                name: t.name,
-                input: parsedInput
-              });
-            }
-            const resObj = {
-              id: msgId,
-              type: 'message',
-              role: 'assistant',
-              content: contentBlocks,
-              model: clientModel,
-              stop_reason: toolsCalled.length > 0 ? 'tool_use' : 'end_turn',
-              stop_sequence: null,
-              usage: { input_tokens: inTokens, output_tokens: outTokens }
-            };
-            const jsonStr = JSON.stringify(resObj);
-            clientRes.writeHead(200, {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(jsonStr)
             });
-            clientRes.end(jsonStr);
-          });
+
+            proxyRes.on('end', () => {
+              const contentBlocks = [];
+              if (accumulatedText) contentBlocks.push({ type: 'text', text: accumulatedText });
+              for (const t of toolsCalled) {
+                let parsedInput = {};
+                try { parsedInput = JSON.parse(t.arguments || '{}'); } catch (e) {}
+                contentBlocks.push({
+                  type: 'tool_use',
+                  id: t.id,
+                  name: t.name,
+                  input: parsedInput
+                });
+              }
+              const resObj = {
+                id: msgId,
+                type: 'message',
+                role: 'assistant',
+                content: contentBlocks,
+                model: clientModel,
+                stop_reason: toolsCalled.length > 0 ? 'tool_use' : 'end_turn',
+                stop_sequence: null,
+                usage: { input_tokens: inTokens, output_tokens: outTokens }
+              };
+              const jsonStr = JSON.stringify(resObj);
+              clientRes.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(jsonStr)
+              });
+              clientRes.end(jsonStr);
+            });
+          }
         }
       });
 
@@ -684,80 +833,54 @@ const server = http.createServer((clientReq, clientRes) => {
     return;
   }
 
-  // Standard OpenAI Responses / Chat Completions handler (used by Grok CLI)
-  const reqChunks = [];
-  clientReq.on('data', chunk => reqChunks.push(chunk));
+  // Handle Grok CLI and standard OpenAI /responses endpoint
+  const chunks = [];
+  clientReq.on('data', (chunk) => {
+    chunks.push(chunk);
+  });
+
   clientReq.on('end', () => {
-    let finalBody = Buffer.concat(reqChunks);
+    const rawBody = Buffer.concat(chunks).toString('utf8');
+    let finalBody = rawBody;
     let targetBase = '/zen/go/v1';
-    let parsedJson = null;
 
-    if (finalBody.length > 0) {
+    if (rawBody.trim()) {
       try {
-        const json = JSON.parse(finalBody.toString('utf8'));
-        parsedJson = json;
-        let modified = false;
+        const parsed = JSON.parse(rawBody);
+        let requestedModel = parsed.model || '';
 
-        // Determine upstream base path: Zen endpoint (/zen/v1) for free models vs Go endpoint (/zen/go/v1)
-        if (typeof json.model === 'string' && json.model.endsWith('-free')) {
+        if (requestedModel === 'muse-spark-1.3-free' || requestedModel === 'claude-muse-spark-1.3-free' || requestedModel.includes('contributor-free') || requestedModel.endsWith('-free')) {
+          parsed.model = 'muse-spark-1.3-contributor-free';
           targetBase = '/zen/v1';
-        } else {
+        } else if (requestedModel.includes('muse-spark')) {
+          parsed.model = 'muse-spark-1.3-contributor';
           targetBase = '/zen/go/v1';
-        }
-
-        // Normalize reasoning effort based on target endpoint API shape
-        const isResponses = subPath.includes('responses');
-        if (isResponses) {
-          if (json.reasoning_effort) {
-            json.reasoning = { effort: json.reasoning_effort };
-            delete json.reasoning_effort;
-            modified = true;
-          } else if (json.reasoning && typeof json.reasoning === 'string') {
-            json.reasoning = { effort: json.reasoning };
-            modified = true;
+        } else if (requestedModel.startsWith('claude-')) {
+          const raw = requestedModel.slice(7);
+          if (raw === 'muse-spark-1.3-free' || raw === 'muse-spark-1.3-contributor-free') {
+            parsed.model = 'muse-spark-1.3-contributor-free';
+            targetBase = '/zen/v1';
+          } else if (raw === 'muse-spark-1.3' || raw === 'muse-spark-1.3-contributor') {
+            parsed.model = 'muse-spark-1.3-contributor';
+            targetBase = '/zen/go/v1';
+          } else {
+            parsed.model = raw;
+            targetBase = GO_MODELS_SET.has(raw) ? '/zen/go/v1' : '/zen/v1';
           }
         } else {
-          // Chat completions expects reasoning_effort as string
-          if (json.reasoning && typeof json.reasoning.effort === 'string') {
-            json.reasoning_effort = json.reasoning.effort;
-            delete json.reasoning;
-            modified = true;
-          }
+          targetBase = GO_MODELS_SET.has(requestedModel) ? '/zen/go/v1' : '/zen/v1';
         }
 
-        // Strip prior reasoning items from input history to prevent HTTP 400
-        if (Array.isArray(json.input)) {
-          const originalLen = json.input.length;
-          json.input = json.input.filter(item => {
-            if (!item) return false;
-            if (item.type === 'reasoning') return false;
-            if (item.type === 'item_reference' && typeof item.id === 'string' && item.id.startsWith('rs_')) {
-              return false;
-            }
-            return true;
-          });
-
-          if (json.input.length !== originalLen) {
-            modified = true;
-          }
-        }
-
-        if (modified) {
-          finalBody = Buffer.from(JSON.stringify(json));
-        }
-      } catch (e) {
-        // Non-JSON or parse error; forward untouched
-      }
+        applyOpenCodeHeaders(headers, clientReq.headers, parsed);
+        finalBody = JSON.stringify(parsed);
+      } catch (e) {}
+    } else {
+      applyOpenCodeHeaders(headers, clientReq.headers, null);
     }
 
-    if (finalBody.length > 0) {
-      headers['content-length'] = Buffer.byteLength(finalBody);
-    }
+    headers['content-length'] = Buffer.byteLength(finalBody);
 
-    // Apply official OpenCode identity and session headers, stripping Grok client metadata
-    applyOpenCodeHeaders(headers, clientReq.headers, parsedJson);
-
-    const targetPath = targetBase + subPath;
+    const targetPath = `${targetBase}${cleanPath}`;
     const options = {
       hostname: TARGET_HOST,
       port: 443,
@@ -766,17 +889,8 @@ const server = http.createServer((clientReq, clientRes) => {
       headers: headers
     };
 
-    const logHeaders = { ...headers };
-    if (logHeaders.authorization) {
-      logHeaders.authorization = logHeaders.authorization.slice(0, 15) + '...';
-    }
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Outgoing Headers: ${JSON.stringify(logHeaders)}\n`);
-
     const proxyReq = https.request(options, (proxyRes) => {
-      const contentType = proxyRes.headers['content-type'] || '';
-      const isSSE = contentType.includes('text/event-stream');
-
-      if (!isSSE) {
+      if (proxyRes.statusCode >= 400) {
         let errChunks = [];
         proxyRes.on('data', c => errChunks.push(c));
         proxyRes.on('end', () => {
@@ -802,7 +916,6 @@ const server = http.createServer((clientReq, clientRes) => {
 
         for (const part of parts) {
           if (!part.trim()) continue;
-          // Filter out OpenCode non-standard ping SSE frames
           if (/^event:\s*ping/m.test(part) || /"type":\s*"ping"/m.test(part)) {
             continue;
           }
