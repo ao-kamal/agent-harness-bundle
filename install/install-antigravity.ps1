@@ -17,7 +17,6 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:ClaudeHome = Join-Path $env:USERPROFILE '.claude'
 $script:AgyHome = Join-Path $env:USERPROFILE '.gemini\antigravity-cli'
-$script:BundleRoot = Split-Path -Parent $PSScriptRoot
 $script:StateFile = Join-Path $env:USERPROFILE '.harness-bundle-antigravity-state.json'
 
 function Write-Info { param($m) if (-not $Quiet) { Write-Host "-> $m" -ForegroundColor Cyan } }
@@ -85,53 +84,6 @@ if ($Update -or -not ($state.completed -contains 'junctions')) {
     Set-Junction -Link (Join-Path $script:AgyHome 'rules') -Target (Join-Path $script:ClaudeHome 'rules') -Optional
     Set-Junction -Link (Join-Path $script:AgyHome 'agents') -Target (Join-Path $script:ClaudeHome 'agents') -Optional
     Complete-Stage $state 'junctions'
-}
-
-if ($Update -or -not ($state.completed -contains 'keybindings')) {
-    Write-Info "deploying keybindings.json (unintercept ctrl+v for Wispr Flow dictation & terminal paste)"
-    $kbSrc = Join-Path $script:BundleRoot 'config\antigravity\keybindings.json'
-    $kbDst = Join-Path $script:AgyHome 'keybindings.json'
-    if (Test-Path $kbSrc) {
-        if (-not (Test-Path $kbDst)) {
-            Copy-Item $kbSrc $kbDst -Force
-            Write-Ok "copied keybindings.json -> $kbDst"
-        } else {
-            try {
-                $existing = Get-Content $kbDst -Raw | ConvertFrom-Json
-                if (-not $existing.'edit.paste' -or ($existing.'edit.paste' -contains 'ctrl+v')) {
-                    $existing | Add-Member -MemberType NoteProperty -Name 'edit.paste' -Value @('alt+v') -Force
-                    $existing | ConvertTo-Json -Depth 4 | Set-Content $kbDst -Encoding ascii
-                    Write-Ok "updated edit.paste in existing keybindings.json -> $kbDst"
-                } else {
-                    Write-Ok "keybindings.json already configures edit.paste: $kbDst"
-                }
-            } catch {
-                Copy-Item $kbSrc $kbDst -Force
-                Write-Ok "refreshed keybindings.json -> $kbDst"
-            }
-        }
-    }
-    Complete-Stage $state 'keybindings'
-}
-
-if ($Update -or -not ($state.completed -contains 'getclip')) {
-    Write-Info "deploying getclip.exe (unbracketed paste helper for agy CLI)"
-    $binDir = Join-Path $env:LOCALAPPDATA 'agy\bin'
-    New-Item -ItemType Directory -Force $binDir | Out-Null
-    $dstClip = Join-Path $binDir 'getclip.exe'
-    $srcClip = Join-Path $script:BundleRoot 'config\antigravity\getclip.exe'
-    $srcCs = Join-Path $script:BundleRoot 'config\antigravity\GetClip.cs'
-    if (Test-Path $srcClip) {
-        Copy-Item $srcClip $dstClip -Force
-        Write-Ok "copied getclip.exe -> $dstClip"
-    } elseif (Test-Path $srcCs) {
-        $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-        if (Test-Path $csc) {
-            & $csc /nologo /optimize /target:exe /out:$dstClip $srcCs
-            Write-Ok "compiled and installed getclip.exe -> $dstClip"
-        }
-    }
-    Complete-Stage $state 'getclip'
 }
 
 Write-Ok "Antigravity adapter done. Sit in agy. Edit ~/.claude only."
