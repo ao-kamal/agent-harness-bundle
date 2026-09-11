@@ -201,13 +201,21 @@ function translateAnthropicRequest(body) {
   let model = clientModel;
   let targetBase = '/zen/go/v1';
 
+  // Strip prefixes added for Claude Code regex compatibility
+  if (model.startsWith('anthropic/')) model = model.slice(10);
+  if (model.startsWith('claude-muse-spark-1.3-free') || model === 'claude-muse-spark-1.3-free') {
+    model = 'muse-spark-1.3-contributor-free';
+  } else if (model.startsWith('claude-muse-spark')) {
+    model = 'muse-spark-1.3-contributor';
+  }
+
   if (model === 'muse-spark-1.3-free' || model.includes('contributor-free') || model.endsWith('-free')) {
     model = 'muse-spark-1.3-contributor-free';
     targetBase = '/zen/v1';
   } else if (model.includes('muse-spark')) {
     model = 'muse-spark-1.3-contributor';
     targetBase = '/zen/go/v1';
-  } else if (['claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-opus-5', 'claude-haiku-4-5'].includes(model)) {
+  } else if (['claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-opus-5', 'claude-haiku-4-5', 'claude-fable-5'].includes(model)) {
     targetBase = '/zen/go/v1';
   } else {
     // Default any generic Claude alias to muse-spark-1.3-contributor
@@ -317,8 +325,29 @@ const server = http.createServer((clientReq, clientRes) => {
     Promise.all([fetchCatalog('/zen/go/v1/models'), fetchCatalog('/zen/v1/models')]).then(([go, zen]) => {
       const map = new Map();
       for (const m of [...go, ...zen]) {
-        if (!map.has(m.id)) map.set(m.id, m);
+        if (!map.has(m.id)) {
+          const item = { ...m };
+          if (!item.display_name) item.display_name = item.name || item.id;
+          map.set(item.id, item);
+        }
       }
+
+      // Add Claude Code filter-compatible aliases (Claude Code filters by /(claude|anthropic)/i)
+      const claudeAliases = [
+        { id: 'claude-muse-spark-1.3-contributor', display_name: 'Muse Spark 1.3 Contributor (OpenCode Go)', description: 'OpenCode Go contributor model' },
+        { id: 'claude-muse-spark-1.3-free', display_name: 'Muse Spark 1.3 Free (OpenCode Zen)', description: 'OpenCode Zen 100% free model' },
+        { id: 'anthropic/muse-spark-1.3-contributor', display_name: 'Muse Spark 1.3 Contributor (OpenCode Go)', description: 'OpenCode Go contributor model' },
+        { id: 'anthropic/muse-spark-1.3-contributor-free', display_name: 'Muse Spark 1.3 Contributor Free (OpenCode Zen)', description: 'OpenCode Zen free model' }
+      ];
+      for (const alias of claudeAliases) {
+        map.set(alias.id, {
+          id: alias.id,
+          object: 'model',
+          display_name: alias.display_name,
+          description: alias.description
+        });
+      }
+
       const merged = { object: 'list', data: Array.from(map.values()) };
       const body = JSON.stringify(merged);
       clientRes.writeHead(200, {
