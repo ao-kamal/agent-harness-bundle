@@ -77,21 +77,28 @@ function translateAnthropicToResponses(body, model) {
 
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
+      const textType = msg.role === 'assistant' ? 'output_text' : 'input_text';
+
       if (typeof msg.content === 'string') {
         input.push({
           type: 'message',
           role: msg.role,
-          content: [{ type: 'input_text', text: msg.content }]
+          content: [{ type: textType, text: msg.content }]
         });
       } else if (Array.isArray(msg.content)) {
+        let textBlocks = [];
         for (const block of msg.content) {
           if (block.type === 'text') {
-            input.push({
-              type: 'message',
-              role: msg.role,
-              content: [{ type: 'input_text', text: block.text }]
-            });
+            textBlocks.push({ type: textType, text: block.text || '' });
           } else if (block.type === 'tool_use') {
+            if (textBlocks.length > 0) {
+              input.push({
+                type: 'message',
+                role: msg.role,
+                content: textBlocks
+              });
+              textBlocks = [];
+            }
             input.push({
               type: 'function_call',
               id: block.id,
@@ -112,6 +119,13 @@ function translateAnthropicToResponses(body, model) {
               output: resText || 'ok'
             });
           }
+        }
+        if (textBlocks.length > 0) {
+          input.push({
+            type: 'message',
+            role: msg.role,
+            content: textBlocks
+          });
         }
       }
     }
