@@ -1,3 +1,17 @@
+
+function cleanParameters(schema) {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  const cleaned = Array.isArray(schema) ? [] : {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === '$schema') continue;
+    cleaned[k] = typeof v === 'object' && v !== null ? cleanParameters(v) : v;
+  }
+  if (!Array.isArray(cleaned)) {
+    if (!cleaned.type) cleaned.type = 'object';
+    if (cleaned.type === 'object' && !cleaned.properties) cleaned.properties = {};
+  }
+  return cleaned;
+}
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -301,6 +315,12 @@ const server = http.createServer((clientReq, clientRes) => {
   delete headers['connection'];
   delete headers['content-length'];
   delete headers['transfer-encoding'];
+  delete headers['accept-encoding'];
+  delete headers['anthropic-version'];
+  delete headers['anthropic-beta'];
+  delete headers['anthropic-dangerous-direct-browser-access'];
+  delete headers['x-api-key'];
+  headers['accept-encoding'] = 'identity';
 
   let activeKey = null;
   try {
@@ -987,6 +1007,14 @@ const server = http.createServer((clientReq, clientRes) => {
             const errBody = Buffer.concat(errChunks).toString('utf8');
             try {
               fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
+              fs.writeFileSync('C:\\Users\\USER\\.grok\\last-failed-request.json', JSON.stringify({
+                time: new Date().toISOString(),
+                statusCode: proxyRes.statusCode,
+                targetPath,
+                headers,
+                payload: outgoingPayload,
+                error: errBody
+              }, null, 2));
             } catch (e) {}
           }
         });
