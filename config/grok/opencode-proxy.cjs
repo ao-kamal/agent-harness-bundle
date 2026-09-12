@@ -3,6 +3,18 @@ const https = require('https');
 const fs = require('fs');
 const crypto = require('crypto');
 
+process.on('uncaughtException', (err) => {
+  try {
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UncaughtException: ${err.stack || err.message}\n`);
+  } catch (e) {}
+});
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UnhandledRejection: ${reason}\n`);
+  } catch (e) {}
+});
+
 const PORT = 5210;
 const TARGET_HOST = 'opencode.ai';
 
@@ -54,6 +66,7 @@ function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
   headers['user-agent'] = 'opencode/1.18.25';
   headers['x-opencode-client'] = 'cli';
   headers['x-opencode-session'] = 'opencode-cli-session';
+  headers['x-opencode-request'] = crypto.randomUUID();
 
   if (convertedPayload && convertedPayload.model) {
     headers['x-opencode-model'] = convertedPayload.model;

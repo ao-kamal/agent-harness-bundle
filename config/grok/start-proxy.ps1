@@ -4,8 +4,10 @@ $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Silentl
 if (-not $conn) {
     $proxyScript = Join-Path $env:USERPROFILE '.grok\opencode-proxy.cjs'
     if (Test-Path $proxyScript) {
+        $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+        if (-not $nodeExe) { $nodeExe = "C:\Program Files\nodejs\node.exe" }
         Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-            CommandLine = "node `"$proxyScript`""
+            CommandLine = "`"$nodeExe`" `"$proxyScript`""
         } | Out-Null
     }
 }
