@@ -76,6 +76,18 @@ function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
   }
 }
 
+function sanitizeParameters(rawParams) {
+  if (!rawParams || typeof rawParams !== 'object') {
+    return { type: 'object', properties: {} };
+  }
+  const params = JSON.parse(JSON.stringify(rawParams));
+  delete params['$schema'];
+  delete params['$id'];
+  if (!params.type) params.type = 'object';
+  if (!params.properties) params.properties = {};
+  return params;
+}
+
 function translateAnthropicToResponses(body, model) {
   const input = [];
   let instructions = '';
@@ -84,7 +96,7 @@ function translateAnthropicToResponses(body, model) {
     if (typeof body.system === 'string') {
       instructions = body.system;
     } else if (Array.isArray(body.system)) {
-      instructions = body.system.map(s => s.text || '').join('\n');
+      instructions = body.system.map(s => (typeof s === 'string' ? s : s.text || '')).join('\n');
     }
   }
 
@@ -93,17 +105,30 @@ function translateAnthropicToResponses(body, model) {
       const textType = msg.role === 'assistant' ? 'output_text' : 'input_text';
 
       if (typeof msg.content === 'string') {
+        const text = msg.content || ' ';
         input.push({
           type: 'message',
           role: msg.role,
-          content: [{ type: textType, text: msg.content }]
+          content: [{ type: textType, text: text }]
         });
       } else if (Array.isArray(msg.content)) {
         let textBlocks = [];
+        let hasToolBlock = false;
+
         for (const block of msg.content) {
+          if (!block || typeof block !== 'object') continue;
+
+          // Skip Anthropic-specific internal thinking blocks
+          if (block.type === 'thinking' || block.type === 'redacted_thinking') {
+            continue;
+          }
+
           if (block.type === 'text') {
-            textBlocks.push({ type: textType, text: block.text || '' });
+            if (block.text) {
+              textBlocks.push({ type: textType, text: block.text });
+            }
           } else if (block.type === 'tool_use') {
+            hasToolBlock = true;
             if (textBlocks.length > 0) {
               input.push({
                 type: 'message',
@@ -112,19 +137,38 @@ function translateAnthropicToResponses(body, model) {
               });
               textBlocks = [];
             }
+            let argsStr = '{}';
+            if (typeof block.input === 'string') {
+              argsStr = block.input;
+            } else if (block.input) {
+              try {
+                argsStr = JSON.stringify(block.input);
+              } catch (e) {
+                argsStr = '{}';
+              }
+            }
             input.push({
               type: 'function_call',
               id: block.id,
               call_id: block.id,
               name: block.name,
-              arguments: typeof block.input === 'string' ? block.input : JSON.stringify(block.input || {})
+              arguments: argsStr
             });
           } else if (block.type === 'tool_result') {
+            hasToolBlock = true;
+            if (textBlocks.length > 0) {
+              input.push({
+                type: 'message',
+                role: msg.role,
+                content: textBlocks
+              });
+              textBlocks = [];
+            }
             let resText = '';
             if (typeof block.content === 'string') {
               resText = block.content;
             } else if (Array.isArray(block.content)) {
-              resText = block.content.map(c => c.text || JSON.stringify(c)).join('\n');
+              resText = block.content.map(c => (typeof c === 'string' ? c : c.text || JSON.stringify(c))).join('\n');
             }
             input.push({
               type: 'function_call_output',
@@ -133,11 +177,19 @@ function translateAnthropicToResponses(body, model) {
             });
           }
         }
+
         if (textBlocks.length > 0) {
           input.push({
             type: 'message',
             role: msg.role,
             content: textBlocks
+          });
+        } else if (!hasToolBlock) {
+          // If no text and no tool blocks were processed, provide a safe fallback so the message isn't dropped
+          input.push({
+            type: 'message',
+            role: msg.role,
+            content: [{ type: textType, text: ' ' }]
           });
         }
       }
@@ -147,11 +199,12 @@ function translateAnthropicToResponses(body, model) {
   const tools = [];
   if (Array.isArray(body.tools)) {
     for (const t of body.tools) {
+      if (!t || !t.name) continue;
       tools.push({
         type: 'function',
         name: t.name,
         description: t.description || '',
-        parameters: t.input_schema || { type: 'object', properties: {} }
+        parameters: sanitizeParameters(t.input_schema)
       });
     }
   }
@@ -228,7 +281,7 @@ function translateAnthropicToChat(body, model) {
       function: {
         name: t.name,
         description: t.description || '',
-        parameters: t.input_schema || { type: 'object', properties: {} }
+        parameters: sanitizeParameters(t.input_schema)
       }
     }));
   }
@@ -424,6 +477,15 @@ const server = http.createServer((clientReq, clientRes) => {
             const errBody = Buffer.concat(errChunks).toString('utf8');
             try {
               fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
+              fs.writeFileSync('C:\\Users\\USER\\.grok\\debug-last-failed-request.json', JSON.stringify({
+                timestamp: new Date().toISOString(),
+                statusCode: proxyRes.statusCode,
+                targetPath,
+                clientModel,
+                routedModel: model,
+                errorBody: errBody,
+                outgoingPayload
+              }, null, 2));
             } catch (e) {}
             clientRes.writeHead(proxyRes.statusCode, { 'Content-Type': 'application/json' });
             clientRes.end(JSON.stringify({
