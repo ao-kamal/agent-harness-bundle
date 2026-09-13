@@ -1,16 +1,28 @@
 
 function cleanParameters(schema) {
   if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
-  const cleaned = Array.isArray(schema) ? [] : {};
-  for (const [k, v] of Object.entries(schema)) {
-    if (k === '$schema') continue;
-    cleaned[k] = typeof v === 'object' && v !== null ? cleanParameters(v) : v;
+
+  function cleanNode(val) {
+    if (val === null || typeof val !== 'object') return val;
+    if (Array.isArray(val)) return val.map(cleanNode);
+
+    const res = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (k === '$schema' || k === '$id') continue;
+      res[k] = cleanNode(v);
+    }
+    if (res.type === 'object' && (!res.properties || typeof res.properties !== 'object')) {
+      res.properties = {};
+    }
+    return res;
   }
-  if (!Array.isArray(cleaned)) {
-    if (!cleaned.type) cleaned.type = 'object';
-    if (cleaned.type === 'object' && !cleaned.properties) cleaned.properties = {};
+
+  const res = cleanNode(schema);
+  if (!res.type) res.type = 'object';
+  if (res.type === 'object' && (!res.properties || typeof res.properties !== 'object')) {
+    res.properties = {};
   }
-  return cleaned;
+  return res;
 }
 const http = require('http');
 const https = require('https');
@@ -90,17 +102,7 @@ function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
   }
 }
 
-function sanitizeParameters(rawParams) {
-  if (!rawParams || typeof rawParams !== 'object') {
-    return { type: 'object', properties: {} };
-  }
-  const params = JSON.parse(JSON.stringify(rawParams));
-  delete params['$schema'];
-  delete params['$id'];
-  if (!params.type) params.type = 'object';
-  if (!params.properties) params.properties = {};
-  return params;
-}
+const sanitizeParameters = cleanParameters;
 
 function translateAnthropicToResponses(body, model) {
   const input = [];
@@ -315,7 +317,6 @@ const server = http.createServer((clientReq, clientRes) => {
   delete headers['connection'];
   delete headers['content-length'];
   delete headers['transfer-encoding'];
-  delete headers['accept-encoding'];
   delete headers['anthropic-version'];
   delete headers['anthropic-beta'];
   delete headers['anthropic-dangerous-direct-browser-access'];
@@ -1003,23 +1004,23 @@ const server = http.createServer((clientReq, clientRes) => {
         let errChunks = [];
         proxyRes.on('data', c => errChunks.push(c));
         proxyRes.on('end', () => {
-          if (proxyRes.statusCode >= 400) {
-            const errBody = Buffer.concat(errChunks).toString('utf8');
-            try {
-              fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
-              fs.writeFileSync('C:\\Users\\USER\\.grok\\last-failed-request.json', JSON.stringify({
-                time: new Date().toISOString(),
-                statusCode: proxyRes.statusCode,
-                targetPath,
-                headers,
-                payload: outgoingPayload,
-                error: errBody
-              }, null, 2));
-            } catch (e) {}
-          }
+          const errBody = Buffer.concat(errChunks).toString('utf8');
+          try {
+            fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
+            fs.writeFileSync('C:\\Users\\USER\\.grok\\last-failed-request.json', JSON.stringify({
+              time: new Date().toISOString(),
+              statusCode: proxyRes.statusCode,
+              targetPath,
+              headers,
+              body: finalBody,
+              error: errBody
+            }, null, 2));
+          } catch (e) {}
+          try {
+            clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+            clientRes.end(errBody);
+          } catch (e) {}
         });
-        clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
-        proxyRes.pipe(clientRes);
         return;
       }
 
