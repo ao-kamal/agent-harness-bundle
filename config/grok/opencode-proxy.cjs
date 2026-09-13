@@ -937,6 +937,10 @@ const server = http.createServer((clientReq, clientRes) => {
         }
       });
 
+      proxyReq.setTimeout(120000, () => {
+        proxyReq.destroy(new Error('Upstream socket timeout (120s)'));
+      });
+
       proxyReq.write(outgoingBody);
       proxyReq.end();
     });
@@ -1053,6 +1057,16 @@ const server = http.createServer((clientReq, clientRes) => {
         }
         try { clientRes.end(); } catch (e) {}
       });
+    });
+
+    clientRes.on('close', () => {
+      if (!clientRes.writableEnded) {
+        proxyReq.destroy();
+      }
+    });
+
+    proxyReq.setTimeout(120000, () => {
+      proxyReq.destroy(new Error('Upstream socket timeout (120s)'));
     });
 
     proxyReq.on('error', (err) => {
