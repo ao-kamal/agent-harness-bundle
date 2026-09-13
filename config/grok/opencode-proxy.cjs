@@ -985,6 +985,14 @@ const server = http.createServer((clientReq, clientRes) => {
           targetBase = GO_MODELS_SET.has(requestedModel) ? '/zen/go/v1' : '/zen/v1';
         }
 
+        // Strip foreign reasoning items to prevent 'reasoning encrypted_content was not issued to this caller' mismatch errors
+        if (Array.isArray(parsed.input)) {
+          parsed.input = parsed.input.filter(it => it.type !== 'reasoning');
+        }
+        if (Array.isArray(parsed.messages)) {
+          parsed.messages = parsed.messages.filter(it => it.type !== 'reasoning');
+        }
+
         applyOpenCodeHeaders(headers, clientReq.headers, parsed);
         finalBody = JSON.stringify(parsed);
       } catch (e) {}
