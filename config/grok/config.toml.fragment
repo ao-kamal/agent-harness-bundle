@@ -1,6 +1,16 @@
 # Merged by install-grok.ps1. Existing keys in ~/.grok/config.toml win.
 # Do not add [skills].paths that point at a second copy of the payload.
 
+[ui]
+cancel_subagents_on_turn_cancel = "always_stop"
+
+[models]
+inference_idle_timeout_secs = 180
+max_retries = 3
+
+[toolset.bash]
+auto_background_on_timeout = true
+
 [memory]
 enabled = true
 
