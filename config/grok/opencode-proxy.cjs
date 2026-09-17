@@ -68,20 +68,39 @@ function routeAnthropicModel(clientModel) {
   if (model.startsWith('claude-')) {
     if (/^claude-(opus|sonnet|haiku|fable)/i.test(model)) {
       // Native OpenCode Claude model
-    } else if (model.includes('muse-spark-1.3-free') || model.includes('contributor-free')) {
-      model = 'muse-spark-1.3-contributor-free';
+    } else if (model.includes('muse-spark-1.3') || model.includes('contributor-free') || model.includes('muse-spark-1.3-free')) {
+      model = 'muse-spark-1.3-contributor';
+    } else if (model.includes('muse-spark-1.2')) {
+      model = 'muse-spark-1.2-contributor';
     } else if (model.includes('muse-spark')) {
       model = 'muse-spark-1.3-contributor';
     } else {
       model = model.slice(7);
     }
+  } else if (model.includes('muse-spark-1.3') || model === 'muse-spark-1.3-free' || model === 'muse-spark-1.3-contributor-free') {
+    model = 'muse-spark-1.3-contributor';
+  } else if (model.includes('muse-spark-1.2') || model === 'muse-spark-1.2-free' || model === 'muse-spark-1.2-contributor-free') {
+    model = 'muse-spark-1.2-contributor';
+  } else if (model.includes('muse-spark')) {
+    model = 'muse-spark-1.3-contributor';
   }
 
   let targetBase = '/zen/go/v1';
-  if (model.endsWith('-free') || model.includes('contributor-free') || !GO_MODELS_SET.has(model)) {
-    targetBase = '/zen/v1';
-  } else {
+  if (GO_MODELS_SET.has(model)) {
     targetBase = '/zen/go/v1';
+  } else if (model.endsWith('-free') || model.includes('contributor-free')) {
+    const nonFree = model.replace(/-contributor-free$|-free$/, '');
+    if (GO_MODELS_SET.has(nonFree + '-contributor')) {
+      model = nonFree + '-contributor';
+      targetBase = '/zen/go/v1';
+    } else if (GO_MODELS_SET.has(nonFree)) {
+      model = nonFree;
+      targetBase = '/zen/go/v1';
+    } else {
+      targetBase = '/zen/v1';
+    }
+  } else {
+    targetBase = '/zen/v1';
   }
 
   const endpointType = RESPONSES_MODELS_SET.has(model) ? 'responses' : 'chat';
@@ -91,7 +110,8 @@ function routeAnthropicModel(clientModel) {
 function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
   headers['user-agent'] = 'opencode/1.18.25';
   headers['x-opencode-client'] = 'cli';
-  headers['x-opencode-session'] = 'opencode-cli-session';
+  headers['x-opencode-project'] = 'global';
+  headers['x-opencode-session'] = (clientReqHeaders && clientReqHeaders['x-opencode-session']) || 'opencode-cli-session';
   headers['x-opencode-request'] = crypto.randomUUID();
 
   if (convertedPayload && convertedPayload.model) {
@@ -314,13 +334,23 @@ const server = http.createServer((clientReq, clientRes) => {
   const cleanPath = qIdx !== -1 ? subPath.slice(0, qIdx) : subPath;
 
   const headers = { ...clientReq.headers, host: TARGET_HOST };
-  delete headers['connection'];
-  delete headers['content-length'];
-  delete headers['transfer-encoding'];
-  delete headers['anthropic-version'];
-  delete headers['anthropic-beta'];
-  delete headers['anthropic-dangerous-direct-browser-access'];
-  delete headers['x-api-key'];
+  for (const k of Object.keys(headers)) {
+    const lk = k.toLowerCase();
+    if (
+      lk.startsWith('x-grok-') ||
+      lk.startsWith('x-xai-') ||
+      lk.startsWith('x-cursor-') ||
+      lk.startsWith('anthropic-') ||
+      lk.startsWith('x-anthropic-') ||
+      lk === 'connection' ||
+      lk === 'content-length' ||
+      lk === 'transfer-encoding' ||
+      lk === 'x-api-key' ||
+      lk === 'user-agent'
+    ) {
+      delete headers[k];
+    }
+  }
   headers['accept-encoding'] = 'identity';
 
   let activeKey = null;
@@ -370,8 +400,8 @@ const server = http.createServer((clientReq, clientRes) => {
     return;
   }
 
-  // Model catalog endpoint (GET /v1/models) - dynamically exposes ALL OpenCode models
-  if (clientReq.method === 'GET' && (cleanPath === '/models' || cleanPath === '/models/')) {
+  // Model catalog endpoint (GET /v1/models or GET /v1/models-v2) - dynamically exposes ALL OpenCode models
+  if (clientReq.method === 'GET' && (cleanPath === '/models' || cleanPath === '/models/' || cleanPath === '/models-v2' || cleanPath === '/models-v2/')) {
     const fetchCatalog = (p) => new Promise((resolve) => {
       const r = https.request({
         hostname: TARGET_HOST,
@@ -963,23 +993,51 @@ const server = http.createServer((clientReq, clientRes) => {
         const parsed = JSON.parse(rawBody);
         let requestedModel = parsed.model || '';
 
-        if (requestedModel === 'muse-spark-1.3-free' || requestedModel === 'claude-muse-spark-1.3-free' || requestedModel.includes('contributor-free') || requestedModel.endsWith('-free')) {
-          parsed.model = 'muse-spark-1.3-contributor-free';
-          targetBase = '/zen/v1';
+        if (
+          requestedModel.includes('muse-spark-1.3') ||
+          requestedModel === 'muse-spark-1.3-free' ||
+          requestedModel === 'muse-spark-1.3-contributor-free' ||
+          requestedModel === 'claude-muse-spark-1.3-free' ||
+          requestedModel === 'claude-muse-spark-1.3'
+        ) {
+          parsed.model = 'muse-spark-1.3-contributor';
+          targetBase = '/zen/go/v1';
+        } else if (
+          requestedModel.includes('muse-spark-1.2') ||
+          requestedModel === 'muse-spark-1.2-free' ||
+          requestedModel === 'muse-spark-1.2-contributor-free'
+        ) {
+          parsed.model = 'muse-spark-1.2-contributor';
+          targetBase = '/zen/go/v1';
         } else if (requestedModel.includes('muse-spark')) {
           parsed.model = 'muse-spark-1.3-contributor';
           targetBase = '/zen/go/v1';
         } else if (requestedModel.startsWith('claude-')) {
           const raw = requestedModel.slice(7);
-          if (raw === 'muse-spark-1.3-free' || raw === 'muse-spark-1.3-contributor-free') {
-            parsed.model = 'muse-spark-1.3-contributor-free';
-            targetBase = '/zen/v1';
-          } else if (raw === 'muse-spark-1.3' || raw === 'muse-spark-1.3-contributor') {
+          if (raw.includes('muse-spark-1.3')) {
             parsed.model = 'muse-spark-1.3-contributor';
+            targetBase = '/zen/go/v1';
+          } else if (raw.includes('muse-spark-1.2')) {
+            parsed.model = 'muse-spark-1.2-contributor';
+            targetBase = '/zen/go/v1';
+          } else if (GO_MODELS_SET.has(raw)) {
+            parsed.model = raw;
             targetBase = '/zen/go/v1';
           } else {
             parsed.model = raw;
-            targetBase = GO_MODELS_SET.has(raw) ? '/zen/go/v1' : '/zen/v1';
+            targetBase = '/zen/v1';
+          }
+        } else if (requestedModel.endsWith('-free') || requestedModel.includes('contributor-free')) {
+          const nonFree = requestedModel.replace(/-contributor-free$|-free$/, '');
+          if (GO_MODELS_SET.has(nonFree + '-contributor')) {
+            parsed.model = nonFree + '-contributor';
+            targetBase = '/zen/go/v1';
+          } else if (GO_MODELS_SET.has(nonFree)) {
+            parsed.model = nonFree;
+            targetBase = '/zen/go/v1';
+          } else {
+            parsed.model = requestedModel;
+            targetBase = '/zen/v1';
           }
         } else {
           targetBase = GO_MODELS_SET.has(requestedModel) ? '/zen/go/v1' : '/zen/v1';
