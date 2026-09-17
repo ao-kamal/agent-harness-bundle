@@ -49,7 +49,8 @@ const GO_MODELS_LIST = [
   "glm-5.2", "glm-5.3-flash", "glm-5.3", "glm-5.1", "glm-5", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash",
   "deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp", "qwen3.7-max", "qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus",
   "qwen3.6-plus", "qwen3.5-plus", "mimo-v2-pro", "mimo-v2-omni", "mimo-v2.5-pro", "mimo-v2.5", "hy4-preview", "hy3",
-  "hy3-preview", "gpt-5.6-luna", "grok-4.5", "grok-4.6", "muse-spark-1.3-contributor", "muse-spark-1.2-contributor", "omen-alpha"
+  "hy3-preview", "gpt-5.6-luna", "grok-4.5", "grok-4.6", "muse-spark-1.3-contributor", "muse-spark-1.2-contributor", "omen-alpha",
+  "union-alpha", "big-pickle"
 ];
 const GO_MODELS_SET = new Set(GO_MODELS_LIST);
 
@@ -57,6 +58,7 @@ const RESPONSES_MODELS_SET = new Set([
   'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor', 'muse-spark-1.3-contributor-free', 'muse-spark-1.2-contributor-free',
   'muse-spark-1.3', 'muse-spark-1.2',
   'deepseek-v4.1-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-flash',
+  'big-pickle', 'union-alpha',
   'grok-4.6', 'gpt-5.6-luna',
   'claude-fable-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-opus-4-5',
   'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-sonnet-4', 'claude-haiku-4-5'

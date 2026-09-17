@@ -137,6 +137,60 @@ env_key = "OPENCODE_API_KEY"
 context_window = 1048576
 max_completion_tokens = 131072
 
+[model."deepseek-v4.1-flash"]
+model = "deepseek-v4.1-flash"
+base_url = "http://127.0.0.1:5210/v1"
+name = "DeepSeek V4.1 Flash (OpenCode Go)"
+api_backend = "responses"
+api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
+env_key = "OPENCODE_API_KEY"
+context_window = 1048576
+max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
+
+[model."omen-alpha"]
+model = "omen-alpha"
+base_url = "http://127.0.0.1:5210/v1"
+name = "Omen Alpha (OpenCode Stealth Reasoning)"
+api_backend = "chat_completions"
+api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
+env_key = "OPENCODE_API_KEY"
+context_window = 1048576
+max_completion_tokens = 131072
+supports_reasoning_effort = true
+reasoning_efforts = [
+  { value = "low", label = "Low Effort", description = "Fast responses with minimal reasoning" },
+  { value = "medium", label = "Medium Effort", description = "Balanced effort with standard reasoning" },
+  { value = "high", label = "High Effort", description = "Higher quality with extensive reasoning", default = true },
+  { value = "xhigh", label = "Extra High Effort", description = "Highest effort and deepest reasoning" }
+]
+
+[model."union-alpha"]
+model = "union-alpha"
+base_url = "http://127.0.0.1:5210/v1"
+name = "Union Alpha (OpenCode Stealth)"
+api_backend = "chat_completions"
+api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
+env_key = "OPENCODE_API_KEY"
+context_window = 1048576
+max_completion_tokens = 131072
+
+[model."big-pickle"]
+model = "big-pickle"
+base_url = "http://127.0.0.1:5210/v1"
+name = "Big Pickle (OpenCode Stealth Free)"
+api_backend = "chat_completions"
+api_key = "sk-OPENCODE-API-KEY-GOES-HERE"
+env_key = "OPENCODE_API_KEY"
+context_window = 1048576
+max_completion_tokens = 131072
+
 [model.opencode-grok-4.6]
 model = "grok-4.6"
 base_url = "http://127.0.0.1:5210/v1"
