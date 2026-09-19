@@ -70,7 +70,11 @@ function routeAnthropicModel(clientModel) {
   if (model.startsWith('claude-')) {
     if (/^claude-(opus|sonnet|haiku|fable)/i.test(model)) {
       // Native OpenCode Claude model
-    } else if (model.includes('muse-spark-1.3') || model.includes('contributor-free') || model.includes('muse-spark-1.3-free')) {
+    } else if (model.includes('muse-spark-1.3-contributor-free') || model.includes('muse-spark-1.3-free')) {
+      model = 'muse-spark-1.3-contributor-free';
+    } else if (model.includes('muse-spark-1.2-contributor-free') || model.includes('muse-spark-1.2-free')) {
+      model = 'muse-spark-1.2-contributor-free';
+    } else if (model.includes('muse-spark-1.3')) {
       model = 'muse-spark-1.3-contributor';
     } else if (model.includes('muse-spark-1.2')) {
       model = 'muse-spark-1.2-contributor';
@@ -79,16 +83,25 @@ function routeAnthropicModel(clientModel) {
     } else {
       model = model.slice(7);
     }
-  } else if (model.includes('muse-spark-1.3') || model === 'muse-spark-1.3-free' || model === 'muse-spark-1.3-contributor-free') {
+  } else if (model === 'muse-spark-1.3-free' || model === 'muse-spark-1.3-contributor-free') {
+    model = 'muse-spark-1.3-contributor-free';
+  } else if (model === 'muse-spark-1.2-free' || model === 'muse-spark-1.2-contributor-free') {
+    model = 'muse-spark-1.2-contributor-free';
+  } else if (model.includes('muse-spark-1.3')) {
     model = 'muse-spark-1.3-contributor';
-  } else if (model.includes('muse-spark-1.2') || model === 'muse-spark-1.2-free' || model === 'muse-spark-1.2-contributor-free') {
+  } else if (model.includes('muse-spark-1.2')) {
     model = 'muse-spark-1.2-contributor';
-  } else if (model.includes('muse-spark')) {
-    model = 'muse-spark-1.3-contributor';
   }
 
+  const ZEN_FREE_KEEP = new Set([
+    'muse-spark-1.3-contributor-free',
+    'muse-spark-1.2-contributor-free',
+  ]);
+
   let targetBase = '/zen/go/v1';
-  if (GO_MODELS_SET.has(model)) {
+  if (ZEN_FREE_KEEP.has(model)) {
+    targetBase = '/zen/v1';
+  } else if (GO_MODELS_SET.has(model)) {
     targetBase = '/zen/go/v1';
   } else if (model.endsWith('-free') || model.includes('contributor-free')) {
     const nonFree = model.replace(/-contributor-free$|-free$/, '');
@@ -996,18 +1009,29 @@ const server = http.createServer((clientReq, clientRes) => {
         let requestedModel = parsed.model || '';
 
         if (
-          requestedModel.includes('muse-spark-1.3') ||
           requestedModel === 'muse-spark-1.3-free' ||
           requestedModel === 'muse-spark-1.3-contributor-free' ||
           requestedModel === 'claude-muse-spark-1.3-free' ||
+          requestedModel === 'claude-muse-spark-1.3-contributor-free'
+        ) {
+          parsed.model = 'muse-spark-1.3-contributor-free';
+          targetBase = '/zen/v1';
+        } else if (
+          requestedModel === 'muse-spark-1.2-free' ||
+          requestedModel === 'muse-spark-1.2-contributor-free' ||
+          requestedModel === 'claude-muse-spark-1.2-free' ||
+          requestedModel === 'claude-muse-spark-1.2-contributor-free'
+        ) {
+          parsed.model = 'muse-spark-1.2-contributor-free';
+          targetBase = '/zen/v1';
+        } else if (
+          requestedModel.includes('muse-spark-1.3') ||
           requestedModel === 'claude-muse-spark-1.3'
         ) {
           parsed.model = 'muse-spark-1.3-contributor';
           targetBase = '/zen/go/v1';
         } else if (
-          requestedModel.includes('muse-spark-1.2') ||
-          requestedModel === 'muse-spark-1.2-free' ||
-          requestedModel === 'muse-spark-1.2-contributor-free'
+          requestedModel.includes('muse-spark-1.2')
         ) {
           parsed.model = 'muse-spark-1.2-contributor';
           targetBase = '/zen/go/v1';
@@ -1016,7 +1040,13 @@ const server = http.createServer((clientReq, clientRes) => {
           targetBase = '/zen/go/v1';
         } else if (requestedModel.startsWith('claude-')) {
           const raw = requestedModel.slice(7);
-          if (raw.includes('muse-spark-1.3')) {
+          if (raw === 'muse-spark-1.3-free' || raw === 'muse-spark-1.3-contributor-free') {
+            parsed.model = 'muse-spark-1.3-contributor-free';
+            targetBase = '/zen/v1';
+          } else if (raw === 'muse-spark-1.2-free' || raw === 'muse-spark-1.2-contributor-free') {
+            parsed.model = 'muse-spark-1.2-contributor-free';
+            targetBase = '/zen/v1';
+          } else if (raw.includes('muse-spark-1.3')) {
             parsed.model = 'muse-spark-1.3-contributor';
             targetBase = '/zen/go/v1';
           } else if (raw.includes('muse-spark-1.2')) {
