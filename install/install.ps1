@@ -17,19 +17,21 @@ param(
     [switch]$SkipWSL,
     [switch]$SkipVault,
     [switch]$Quiet,
-    [switch]$Update   # after git pull: re-deploys skills/config (Win + WSL) without redoing installs
+    [switch]$Update,   # after git pull: re-deploys skills/config (Win + WSL) without redoing installs
+    [switch]$OpenCodeOnly # provision shared brain + WSL substrate, but leave Claude login/plugins/secrets/MCP/full smoke pending
 )
 
 if ($Help) {
     Write-Host "agent-harness-bundle installer"
     Write-Host ""
-    Write-Host "Usage: powershell -ExecutionPolicy Bypass -File install\install.ps1 [-Help] [-SkipWSL] [-SkipVault] [-Quiet] [-Update]"
+    Write-Host "Usage: powershell -ExecutionPolicy Bypass -File install\install.ps1 [-Help] [-SkipWSL] [-SkipVault] [-Quiet] [-Update] [-OpenCodeOnly]"
     Write-Host ""
     Write-Host "  -Help      Show this help and exit"
     Write-Host "  -SkipWSL   Skip Stage 5 (WSL + Ubuntu toolchain)"
     Write-Host "  -SkipVault Skip Stage 10 (Obsidian vault starter)"
     Write-Host "  -Quiet     Suppress informational output (warnings/errors still print)"
     Write-Host "  -Update    Re-deploy config + skills (Win and WSL) and re-run the smoke test;"
+    Write-Host "  -OpenCodeOnly  Skip Claude login/plugins, secrets, Claude MCP registration, and the Claude-dependent smoke test; still provisions WSL and shared skills"
     Write-Host "             does not redo package installs. Run after 'git pull'."
     exit 0
 }
@@ -99,6 +101,44 @@ $state = Get-State
 function Update-SessionPath {
     # A child installer process cannot mutate this session's PATH; re-read it from the registry.
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+}
+function Add-UserPathEntry {
+    param([string]$Directory)
+    if ([string]::IsNullOrWhiteSpace($Directory)) { return }
+    $Directory = $Directory.Trim()
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return }
+    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    $entries = @($userPath -split ';' | Where-Object { $_ -and $_.Trim() })
+    $present = $false
+    foreach ($entry in $entries) {
+        if ($entry.Trim().TrimEnd('\\') -ieq $Directory.TrimEnd('\\')) { $present = $true; break }
+    }
+    if (-not $present) {
+        [Environment]::SetEnvironmentVariable('PATH', (($entries + $Directory) -join ';'), 'User')
+        Write-Ok "added $Directory to User PATH"
+    }
+    Update-SessionPath
+}
+
+function Resolve-PythonExe {
+    # The WindowsApps python.exe alias wins PATH order on some machines and
+    # only prints the Store message. Prefer a real interpreter on disk.
+    $commands = @(Get-Command python.exe -All -ErrorAction SilentlyContinue)
+    foreach ($command in $commands) {
+        if ($command.Source -and ($command.Source -notmatch 'WindowsApps') -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+            return $command.Source
+        }
+    }
+    $roots = @(
+        (Join-Path $env:LOCALAPPDATA 'Python'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python')
+    )
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        $found = Get-ChildItem -LiteralPath $root -Filter 'python.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    return $null
 }
 
 function Invoke-GitBash {
@@ -194,6 +234,7 @@ if (-not (Test-StageDone $state 'package-managers')) {
     }
     Write-Warn2 "Note: unauthenticated GitHub downloads are rate-limited (60/hr). If later stages hit rate limits, run: gh auth login"
     Complete-Stage $state 'package-managers'
+    Update-SessionPath
 }
 
 # =================== Stage 2: CLI tools ===================
@@ -201,6 +242,28 @@ if (-not (Test-StageDone $state 'cli-tools')) {
     Write-Info "Stage 2: Windows CLI tools"
     $localBin = Join-Path $env:USERPROFILE '.local\bin'
     New-Item -ItemType Directory -Force $localBin | Out-Null
+    Add-UserPathEntry $localBin
+    Update-SessionPath
+
+    # Resolve the real interpreter; the WindowsApps alias is not usable.
+    $script:PythonExe = Resolve-PythonExe
+    if (-not $script:PythonExe) {
+        Write-Err2 "Python interpreter not found (searched PATH and LocalAppData\Python)"
+        exit 1
+    }
+    try {
+        $pythonScripts = (& $script:PythonExe -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null | Select-Object -First 1)
+        if ($pythonScripts) { Add-UserPathEntry $pythonScripts.Trim() }
+    } catch { }
+
+    # npm's global bin is provider-dependent; put the measured prefix on PATH.
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+        try {
+            $npmPrefix = (& npm prefix -g 2>$null | Select-Object -First 1)
+            if ($npmPrefix) { Add-UserPathEntry $npmPrefix.Trim() }
+        } catch { }
+    }
+    Update-SessionPath
 
     # Per-tool truthfulness: native commands don't throw in PS 5.1, so every
     # install is checked via $LASTEXITCODE / command presence and marked
@@ -273,11 +336,16 @@ if (-not (Test-StageDone $state 'cli-tools')) {
         Import-Module BitsTransfer
         $msDir = Join-Path $env:TEMP 'ms-hb'
         New-Item -ItemType Directory -Force $msDir | Out-Null
-        Start-BitsTransfer -Source 'https://github.com/Dicklesworthstone/meta_skill/releases/latest/download/SHA256SUMS' -Destination "$msDir\SHA256SUMS" -RetryInterval 60 -RetryTimeout 600
+        # The upstream latest release currently has no Windows ms asset, and its
+        # checksum file is named SHA256SUMS.txt (not SHA256SUMS). Pin the last
+        # release that publishes the Windows zip this installer expects.
+        $msRelease = 'v0.2.0'
+        $msBase = "https://github.com/Dicklesworthstone/meta_skill/releases/download/$msRelease"
+        Start-BitsTransfer -Source "$msBase/SHA256SUMS.txt" -Destination "$msDir\SHA256SUMS" -RetryInterval 60 -RetryTimeout 600
         $msAsset = (Get-Content "$msDir\SHA256SUMS" | Select-String 'x86_64-pc-windows-msvc.zip').Line
         $msName = ($msAsset -split '\s+')[1] -replace '^\*',''
         $msHash = ($msAsset -split '\s+')[0]
-        Start-BitsTransfer -Source "https://github.com/Dicklesworthstone/meta_skill/releases/latest/download/$msName" -Destination "$msDir\ms.zip" -RetryInterval 60 -RetryTimeout 600
+        Start-BitsTransfer -Source "$msBase/$msName" -Destination "$msDir\ms.zip" -RetryInterval 60 -RetryTimeout 600
         $actual = (Get-FileHash "$msDir\ms.zip" -Algorithm SHA256).Hash.ToLower()
         if ($actual -ne $msHash.ToLower()) { throw "ms.zip hash mismatch - aborting this tool" }
         Expand-Archive "$msDir\ms.zip" -DestinationPath "$msDir\x" -Force
@@ -312,20 +380,18 @@ if (-not (Test-StageDone $state 'cli-tools')) {
     # NEVER `npm install -g dev-browser@latest`. SawyerHood stock overwrote our
     # pinned ergo Windows exe on 2026-07-31 (harness-bundle Track A).
     foreach ($npmPkg in @('defuddle', 'firecrawl-cli')) {
-        Invoke-Checked $npmPkg { npm install -g $npmPkg --silent }
+        $npmCommand = if ($npmPkg -eq 'firecrawl-cli') { 'firecrawl' } else { $npmPkg }
+        Invoke-Checked $npmCommand { npm install -g $npmPkg --silent }
     }
-    Invoke-Checked 'yt-dlp' { pip install --quiet yt-dlp }
-    Invoke-Checked 'uv' { pip install --quiet uv }
+    Invoke-Checked 'yt-dlp' { & $script:PythonExe -m pip install --quiet yt-dlp }
+    Invoke-Checked 'uv' { & $script:PythonExe -m pip install --quiet uv }
 
     . (Join-Path $script:BundleRoot 'install\_dev-browser.ps1')
     Ensure-PinnedDevBrowser
 
-    # Ensure ~\.local\bin on User PATH
-    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
-    if ($userPath -notlike "*$localBin*") {
-        [Environment]::SetEnvironmentVariable('PATH', "$userPath;$localBin", 'User')
-        Write-Ok "added $localBin to User PATH (new shells only)"
-    }
+    # All PATH changes above are also applied to this session, so the checks
+    # below and the remainder of this run see the same commands as a new shell.
+    Update-SessionPath
     if ($script:FailedTools.Count -gt 0) {
         Write-Warn2 ("Stage 2 incomplete - failed tools: " + ($script:FailedTools -join ', ') + ". Re-run this installer to retry ONLY the failed tools.")
     } else {
@@ -334,7 +400,9 @@ if (-not (Test-StageDone $state 'cli-tools')) {
 }
 
 # =================== Stage 3a: Claude Code + login (MANUAL GATE) ===================
-if (-not (Test-StageDone $state 'claude-login')) {
+if ($OpenCodeOnly) {
+    Write-Warn2 "Stage 3a skipped (-OpenCodeOnly): Claude Code login remains pending"
+} elseif (-not (Test-StageDone $state 'claude-login')) {
     Write-Info "Stage 3a: Claude Code + login"
     if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
         Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
@@ -357,7 +425,9 @@ if (-not (Test-StageDone $state 'claude-login')) {
 }
 
 # =================== Stage 3b: Plugins + canonical skills ===================
-if (-not (Test-StageDone $state 'plugins')) {
+if ($OpenCodeOnly) {
+    Write-Warn2 "Stage 3b skipped (-OpenCodeOnly): Claude plugins remain pending"
+} elseif (-not (Test-StageDone $state 'plugins')) {
     Write-Info "Stage 3b: plugins + canonical skill installs"
     Update-SessionPath
     claude plugin marketplace add anthropics/claude-code 2>$null
@@ -477,8 +547,8 @@ with open(dst_path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, indent=2)
 print("merged", os.path.basename(dst_path))
 '@ | Out-File $mergePy -Encoding utf8
-    python $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.fragment.json') (Join-Path $claudeDir 'settings.json')
-    python $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.local.fragment.json') (Join-Path $claudeDir 'settings.local.json')
+    & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.fragment.json') (Join-Path $claudeDir 'settings.json')
+    & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.local.fragment.json') (Join-Path $claudeDir 'settings.local.json')
 
     Copy-Item (Join-Path $script:BundleRoot 'config\windows\cass-watch-hidden.vbs') (Join-Path $env:USERPROFILE '.local\bin\cass-watch-hidden.vbs') -Force
     Complete-Stage $state 'config-deploy'
@@ -488,11 +558,13 @@ print("merged", os.path.basename(dst_path))
 if ($Update -and -not $SkipWSL -and (Test-StageDone $state 'wsl')) {
     Write-Info "Update mode: re-deploying WSL config (deploy-config + shell-config + symlinks steps)"
     $bundleWslPath = '/mnt/c' + ($script:BundleRoot.Substring(2) -replace '\\','/')
-    @(
+    $wslEnv = @(
         "WIN_USER=$script:WinUser",
         "BUNDLE_ROOT=$bundleWslPath",
         "KIMI_ENABLED=1"
-    ) -join "`n" | Out-File (Join-Path $script:BundleRoot 'install\wsl-setup.env') -Encoding ascii
+    )
+    if ($OpenCodeOnly) { $wslEnv += "SKIP_CLAUDE=1" }
+    $wslEnv -join "`n" | Out-File (Join-Path $script:BundleRoot 'install\wsl-setup.env') -Encoding ascii
     wsl -d Ubuntu -u root -- bash -lc 'sed -i -e /^deploy-config$/d -e /^shell-config$/d -e /^symlinks$/d /root/.harness-bundle-wsl-state'
     wsl -d Ubuntu -u root -- bash ($bundleWslPath + '/install/wsl-setup.sh')
 }
@@ -504,20 +576,36 @@ elseif (-not (Test-StageDone $state 'wsl')) {
     $wslReady = $false
     try { wsl -l -v 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $wslReady = $true } } catch {}
     if (-not $wslReady) {
-        Write-Info "Enabling WSL (may require a reboot)"
+        Write-Info "Enabling WSL (BITS-verified Microsoft package; may require a reboot)"
         # RunOnce so the installer resumes automatically after reboot
         $runOnce = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
-        Set-ItemProperty -Path $runOnce -Name 'HarnessBundleResume' -Value ("powershell -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`"")
-        wsl --install -d Ubuntu
-        Write-Host ""
-        Write-Warn2 "If Windows asks to reboot: do it. The installer resumes automatically after logon."
-        Write-Host "If no reboot was needed, just re-run the installer to continue."
-        exit 0
+        $resumeCommand = "powershell -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
+        if ($OpenCodeOnly) { $resumeCommand += ' -OpenCodeOnly' }
+        if ($SkipVault) { $resumeCommand += ' -SkipVault' }
+        if ($SkipWSL) { $resumeCommand += ' -SkipWSL' }
+        Set-ItemProperty -Path $runOnce -Name 'HarnessBundleResume' -Value $resumeCommand
+        $bitsScript = Join-Path $script:BundleRoot 'install\install-wsl-bits.ps1'
+        powershell -ExecutionPolicy Bypass -File $bitsScript -Version '2.7.14' -InstallDistro
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err2 "BITS WSL provisioning failed (exit $LASTEXITCODE). No workaround was applied."
+            exit 1
+        }
+        Update-SessionPath
+        try { wsl -l -v 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $wslReady = $true } } catch {}
+        if (-not $wslReady) {
+            Write-Warn2 "WSL features/package require a Windows reboot. No reboot was forced; re-run after reboot."
+            exit 0
+        }
     }
     $distros = (wsl -l -q) -join ' '
     if ($distros -notmatch 'Ubuntu') {
-        wsl --install -d Ubuntu --no-launch
-        Write-Warn2 "Ubuntu installed. Launch 'Ubuntu' once from the Start menu (any username is fine - the harness runs as root), then re-run this installer."
+        $bitsScript = Join-Path $script:BundleRoot 'install\install-wsl-bits.ps1'
+        powershell -ExecutionPolicy Bypass -File $bitsScript -Version '2.7.14' -InstallDistro
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err2 "BITS Ubuntu provisioning failed (exit $LASTEXITCODE)."
+            exit 1
+        }
+        Write-Warn2 "Ubuntu install command completed. Launch 'Ubuntu' once from the Start menu (any username is fine - the harness runs as root), then re-run this installer."
         exit 0
     }
 
@@ -528,11 +616,13 @@ elseif (-not (Test-StageDone $state 'wsl')) {
 
     # Render the env file wsl-setup.sh reads (parameters never cross as args)
     $bundleWslPath = '/mnt/c' + ($script:BundleRoot.Substring(2) -replace '\\','/')
-    @(
+    $wslEnv = @(
         "WIN_USER=$script:WinUser",
         "BUNDLE_ROOT=$bundleWslPath",
         "KIMI_ENABLED=1"
-    ) -join "`n" | Out-File (Join-Path $script:BundleRoot 'install\wsl-setup.env') -Encoding ascii
+    )
+    if ($OpenCodeOnly) { $wslEnv += "SKIP_CLAUDE=1" }
+    $wslEnv -join "`n" | Out-File (Join-Path $script:BundleRoot 'install\wsl-setup.env') -Encoding ascii
 
     Write-Info "Running WSL stage (this is the long one)"
     wsl -d Ubuntu -u root -- bash ($bundleWslPath + '/install/wsl-setup.sh')
@@ -553,13 +643,15 @@ elseif (-not (Test-StageDone $state 'wsl')) {
     Start-Sleep -Seconds 12
     $bootLog = wsl -d Ubuntu -u root -- bash -lc 'tail -5 /root/.local/share/mount-fast-data.log'
     if ("$bootLog" -match 'boot hook start') { Write-Ok "boot hook fired" } else { Write-Warn2 "boot hook log not found - check /root/.local/share/mount-fast-data.log" }
-    $health = & curl.exe -s --max-time 8 http://127.0.0.1:8765/health
-    if ("$health" -match '"status"\s*:\s*"ready"') { Write-Ok "Agent Mail healthy at 127.0.0.1:8765" }
+    $health = & curl.exe -s --max-time 8 http://127.0.0.1:8765/api/health
+    if ("$health" -match '"status"\s*:\s*"(ready|ok)"') { Write-Ok "Agent Mail healthy at 127.0.0.1:8765/api/health" }
     else { Write-Warn2 "Agent Mail not reachable yet (127.0.0.1:8765). It may still be starting; the smoke test re-checks. NEVER probe 'localhost' - IPv6 trap." }
 }
 
 # =================== Stage 6: Secrets ===================
-if (-not (Test-StageDone $state 'secrets')) {
+if ($OpenCodeOnly) {
+    Write-Warn2 "Stage 6 skipped (-OpenCodeOnly): interactive secrets setup remains pending"
+} elseif (-not (Test-StageDone $state 'secrets')) {
     Write-Info "Stage 6: secrets setup (interactive)"
     powershell -ExecutionPolicy Bypass -File (Join-Path $script:BundleRoot 'install\secrets-setup.ps1')
     Complete-Stage $state 'secrets'
@@ -567,7 +659,9 @@ if (-not (Test-StageDone $state 'secrets')) {
 
 # =================== Stage 7: MCP registration ===================
 $mcpScript = Join-Path $script:BundleRoot 'install\mcp-register.ps1'
-if ((-not (Test-StageDone $state 'mcp')) -or (Test-ProvisionScriptChanged $state 'mcp' $mcpScript)) {
+if ($OpenCodeOnly) {
+    Write-Warn2 "Stage 7 skipped (-OpenCodeOnly): Claude MCP registrations remain pending"
+} elseif ((-not (Test-StageDone $state 'mcp')) -or (Test-ProvisionScriptChanged $state 'mcp' $mcpScript)) {
     Write-Info "Stage 7: MCP registrations"
     powershell -ExecutionPolicy Bypass -File $mcpScript
     Complete-ProvisionedStage $state 'mcp' $mcpScript
@@ -623,7 +717,9 @@ elseif (-not (Test-StageDone $state 'vault')) {
 }
 
 # =================== Stage 11: Smoke test ===================
-if (-not (Test-StageDone $state 'smoke')) {
+if ($OpenCodeOnly) {
+    Write-Warn2 "Stage 11 skipped (-OpenCodeOnly): the full smoke test requires Claude on Windows and WSL"
+} elseif (-not (Test-StageDone $state 'smoke')) {
     Write-Info "Stage 11: smoke test"
     $code = Invoke-GitBash -ScriptPath (Join-Path $script:BundleRoot 'install\smoke-test.sh')
     if ($code -eq 0) { Write-Ok "smoke test green"; Complete-Stage $state 'smoke' }
@@ -631,6 +727,23 @@ if (-not (Test-StageDone $state 'smoke')) {
         Write-Err2 "smoke test reported failures (exit $code) - see output above and SETUP.md troubleshooting. Re-run this installer to retry after fixes."
         $script:SmokeFailed = $true
     }
+}
+
+if ($OpenCodeOnly) {
+    Write-Host ""
+    Write-Host "==============================================" -ForegroundColor Green
+    Write-Host " OpenCode-only provisioning complete" -ForegroundColor Green
+    Write-Host "==============================================" -ForegroundColor Green
+    Write-Host " Completed stages: $($state.completed -join ', ')"
+    Write-Host " Claude login, Claude plugins, secrets, Claude MCP registration, and the full smoke test remain pending."
+    Write-Host " Next: install/configure OpenCode, then run smoke-test-opencode.sh and the portability probe."
+    Write-Host ""
+    $lockDirNow = Join-Path $env:TEMP 'harness-bundle.lock'
+    if (Test-Path (Join-Path $lockDirNow 'pid')) {
+        $lockPidNow = Get-Content (Join-Path $lockDirNow 'pid') -ErrorAction SilentlyContinue
+        if ($lockPidNow -eq $PID) { Remove-Item $lockDirNow -Recurse -Force }
+    }
+    exit 0
 }
 
 # =================== Summary ===================

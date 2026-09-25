@@ -10,7 +10,11 @@ function Ensure-PinnedDevBrowser {
     $dbSrc = Join-Path $script:BundleRoot 'payload\bin\dev-browser-windows-x64.exe'
     if (-not (Test-Path $dbSrc)) { throw "missing pinned dev-browser exe: $dbSrc" }
 
-    $dbPkg = Join-Path $env:APPDATA 'npm\node_modules\dev-browser'
+    # npm's global root is provider-dependent (Scoop's Node uses its persist
+    # directory), so resolve it rather than assuming %APPDATA%\npm.
+    $npmRoot = (npm root -g 2>$null | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($npmRoot)) { throw 'npm root -g returned no path' }
+    $dbPkg = Join-Path $npmRoot.Trim() 'dev-browser'
     $dbDst = Join-Path $dbPkg 'bin\dev-browser-windows-x64.exe'
     if (-not (Test-Path $dbPkg)) {
         Write-Info 'npm install -g dev-browser (shim only; exe is overwritten from payload)'
