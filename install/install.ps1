@@ -141,6 +141,19 @@ function Resolve-PythonExe {
     return $null
 }
 
+# Resolve the real interpreter here, not inside the cli-tools stage. Stages are
+# individually skippable, but later stages consume $script:PythonExe
+# unconditionally: once cli-tools is recorded complete its resolution block never
+# runs, and Stage 4 dies on "& $null" with "The expression after '&' in a pipeline
+# element produced an object that was not valid" — an error that names neither the
+# variable nor the stage. Resolution depends on PATH, not on which tools are
+# installed, so it belongs beside the PATH refresh and must run every time.
+Update-SessionPath
+$script:PythonExe = Resolve-PythonExe
+if (-not $script:PythonExe) {
+    Write-Warn2 "real Python interpreter not found (searched PATH and LocalAppData\Python); settings merge and JSON tooling will be skipped"
+}
+
 function Invoke-GitBash {
     param([string]$ScriptPath, [string]$BashArgs = '')
     $candidates = @(
@@ -475,6 +488,13 @@ if (-not (Test-StageDone $state 'config-deploy')) {
         # $rendered is the full text of the new file; decide vs. last-deployed hash.
         $rel = $livePath.Substring($claudeDir.Length + 1)
         $lastHash = $depHash.PSObject.Properties[$rel].Value
+        # UTF-8 without BOM. Windows PowerShell 5.1 defaults to the system ANSI
+        # codepage (cp1252) on Get-Content without -Encoding, which turns every
+        # em dash into "a-circumflex-euro-quote" and every arrow into mojibake;
+        # Set-Content -Encoding utf8 then adds a BOM on top. Both directions are
+        # silent, so a deploy "succeeds" and ships a corrupted brain to every
+        # harness. Read as UTF-8, write as UTF-8 with no BOM.
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         $newBytes = [System.Text.Encoding]::UTF8.GetBytes($rendered)
         $sha = [System.Security.Cryptography.SHA256]::Create()
         $newHash = ([BitConverter]::ToString($sha.ComputeHash($newBytes)) -replace '-','').ToLower()
@@ -483,7 +503,7 @@ if (-not (Test-StageDone $state 'config-deploy')) {
             if ($liveHash -ne $lastHash -and $liveHash -ne $newHash) {
                 # live was modified since we deployed; never clobber user edits
                 Copy-Item $livePath "$livePath.bak.$(Get-Date -Format yyyyMMddHHmmss)"
-                Set-Content -Path "$livePath.incoming" -Value $rendered -Encoding utf8
+                [System.IO.File]::WriteAllText("$livePath.incoming", $rendered, $utf8NoBom)
                 $script:DeployConflicts += $rel
                 Write-Warn2 "LIVE EDIT preserved: $rel differs from last deploy -> wrote $rel.incoming (backup alongside); merge manually"
                 return
@@ -492,14 +512,14 @@ if (-not (Test-StageDone $state 'config-deploy')) {
         if (Test-Path $livePath) {
             Copy-Item $livePath "$livePath.bak.$(Get-Date -Format yyyyMMddHHmmss)"
         }
-        Set-Content -Path $livePath -Value $rendered -Encoding utf8
+        [System.IO.File]::WriteAllText($livePath, $rendered, $utf8NoBom)
         if ($depHash.PSObject.Properties[$rel]) { $depHash.PSObject.Properties.Remove($rel) | Out-Null }
         $depHash | Add-Member -NotePropertyName $rel -NotePropertyValue $newHash -Force
     }
     $dstClaudeMd = Join-Path $claudeDir 'CLAUDE.md'
-    Deploy-ConfigFile ((Get-Content (Join-Path $script:BundleRoot 'config\CLAUDE.md.template') -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser) $dstClaudeMd
+    Deploy-ConfigFile ((Get-Content (Join-Path $script:BundleRoot 'config\CLAUDE.md.template') -Raw -Encoding UTF8) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser) $dstClaudeMd
     Get-ChildItem (Join-Path $script:BundleRoot 'config\rules') -Filter '*.md' | ForEach-Object {
-        Deploy-ConfigFile ((Get-Content $_.FullName -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser) (Join-Path $claudeDir "rules\$($_.Name)")
+        Deploy-ConfigFile ((Get-Content $_.FullName -Raw -Encoding UTF8) -replace '\{\{WIN_USER\}\}', $script:WinUser -replace '\{\{USER_FULL_NAME\}\}', $script:WinUser) (Join-Path $claudeDir "rules\$($_.Name)")
     }
     $depHash | ConvertTo-Json -Depth 3 | Out-File $deployedHashes -Encoding utf8
     Copy-Item (Join-Path $script:BundleRoot 'config\hooks\*') (Join-Path $claudeDir 'hooks') -Force
@@ -510,8 +530,18 @@ if (-not (Test-StageDone $state 'config-deploy')) {
     @'
 import json, os, shutil, sys
 frag_path, dst_path = sys.argv[1], sys.argv[2]
+win_user = sys.argv[3] if len(sys.argv) > 3 else ""
 with open(frag_path, encoding="utf-8") as fh:
-    frag = json.load(fh)
+    frag_text = fh.read()
+# install.ps1 substitutes {{WIN_USER}} for the CLAUDE.md and rules payloads before
+# writing them. The settings fragments used to go straight into json.load, so every
+# hook command shipped a literal "C:\Users\{{WIN_USER}}\..." path: the dcg
+# PreToolUse guard, the compact SessionStart reminder, and both impeccable hooks
+# all pointed at a directory that does not exist and silently did nothing.
+# Substitute here too, and keep the placeholder set in step with the PS side.
+for token in ("{{WIN_USER}}", "{{USER_FULL_NAME}}"):
+    frag_text = frag_text.replace(token, win_user)
+frag = json.loads(frag_text)
 data = {}
 if os.path.exists(dst_path):
     shutil.copy2(dst_path, dst_path + ".bak-harness-bundle")
@@ -547,8 +577,12 @@ with open(dst_path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, indent=2)
 print("merged", os.path.basename(dst_path))
 '@ | Out-File $mergePy -Encoding utf8
-    & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.fragment.json') (Join-Path $claudeDir 'settings.json')
-    & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.local.fragment.json') (Join-Path $claudeDir 'settings.local.json')
+    if ($script:PythonExe) {
+        & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.fragment.json') (Join-Path $claudeDir 'settings.json') $script:WinUser
+        & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.local.fragment.json') (Join-Path $claudeDir 'settings.local.json') $script:WinUser
+    } else {
+        Write-Warn2 "settings fragments NOT merged: no real Python interpreter resolved (settings.json left untouched)"
+    }
 
     Copy-Item (Join-Path $script:BundleRoot 'config\windows\cass-watch-hidden.vbs') (Join-Path $env:USERPROFILE '.local\bin\cass-watch-hidden.vbs') -Force
     Complete-Stage $state 'config-deploy'
@@ -682,7 +716,16 @@ if (-not (Test-StageDone $state 'daemons')) {
 # =================== Stage 9: Terminal (recommended) ===================
 if (-not (Test-StageDone $state 'terminal')) {
     Write-Info "Stage 9: WezTerm (recommended terminal)"
-    scoop install extras/wezterm 2>$null
+    # Only reach for Scoop when WezTerm is genuinely absent. `scoop install` on a
+    # host that already has WezTerm still performs a bucket update, and that git
+    # step writes "no tracking information for the current branch" to stderr. Under
+    # $ErrorActionPreference='Stop' that killed Stage 9 on a machine that already
+    # had WezTerm, leaving .wezterm.lua and the Kimi fragment unwritten.
+    if (Get-Command wezterm -ErrorAction SilentlyContinue) {
+        Write-Ok "WezTerm already on PATH; skipping scoop install"
+    } else {
+        scoop install extras/wezterm 2>$null
+    }
     $wt = Join-Path $env:USERPROFILE '.wezterm.lua'
     if (-not (Test-Path $wt)) { Copy-Item (Join-Path $script:BundleRoot 'config\terminal\wezterm.lua') $wt }
     # Kimi module (first-class): Windows Terminal profile + env script
@@ -691,7 +734,10 @@ if (-not (Test-StageDone $state 'terminal')) {
     Copy-Item (Join-Path $script:BundleRoot 'config\kimi\kimi-env.ps1') (Join-Path $kimiCfgDir 'kimi-env.ps1') -Force
     $fragDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\Fragments\Kimi'
     New-Item -ItemType Directory -Force $fragDir | Out-Null
-    (Get-Content (Join-Path $script:BundleRoot 'config\kimi\wt-fragment-kimi.json') -Raw) -replace '\{\{WIN_USER\}\}', $script:WinUser | Out-File (Join-Path $fragDir 'kimi.json') -Encoding utf8
+    # Windows Terminal parses this fragment as JSON, so it must not carry a BOM.
+    # Out-File -Encoding utf8 in Windows PowerShell 5.1 prepends one.
+    $kimiJson = (Get-Content (Join-Path $script:BundleRoot 'config\kimi\wt-fragment-kimi.json') -Raw -Encoding UTF8) -replace '\{\{WIN_USER\}\}', $script:WinUser
+    [System.IO.File]::WriteAllText((Join-Path $fragDir 'kimi.json'), $kimiJson, (New-Object System.Text.UTF8Encoding($false)))
     if (-not (Test-Path (Join-Path $kimiCfgDir 'key'))) {
         Write-Warn2 "Kimi: put your Kimi Code API key in $kimiCfgDir\key (one line). SETUP.md explains getting a subscription."
     }

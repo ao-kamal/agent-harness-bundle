@@ -114,21 +114,33 @@ else
 fi
 
 hdr "PHASE 5 — Flywheel CLIs"
+  # Resolve each CLI the way a harness would actually invoke it: by name on PATH.
+  # install.ps1 provisions dcg/cm/bv/caam/slb through `scoop install`, which lands
+  # them in scoop\shims, while cass/br/fmd come from installers that write
+  # ~/.local/bin. Asserting one fixed directory reported four valid Windows
+  # binaries as "not found". PATH first, then the legacy local bin path.
   assert_win_pe() {
-    local path="$1" name="$2" py
-    if [ ! -f "$path" ]; then fail "Win: $name on disk" "not found at $path"; return; fi
+    local name="$1" path py resolved
+    path="$(command -v "$name" 2>/dev/null)"
+    if [ -z "$path" ] && [ -f "$WINHOME/.local/bin/$name.exe" ]; then
+      path="$WINHOME/.local/bin/$name.exe"
+    fi
+    if [ -z "$path" ] || [ ! -f "$path" ]; then
+      fail "Win: $name on disk" "not on PATH and not in $WINHOME/.local/bin"
+      return
+    fi
     if ! py="$(_resolve_python)"; then
       fail "Win: $name is a Windows PE" "no python interpreter found (need python, python3, or py)"
       return
     fi
     "$py" -c "import sys; b=open(sys.argv[1],'rb').read(2); sys.exit(0 if b==b'MZ' else 1)" "$path" \
-      && pass "Win: $name is a Windows PE" \
-      || fail "Win: $name is a Windows PE" "file exists but does not start with MZ (wrong release asset?)"
+      && pass "Win: $name is a Windows PE ($path)" \
+      || fail "Win: $name is a Windows PE" "resolved to $path but it does not start with MZ (wrong release asset?)"
   }
-assert_win_pe "$WINHOME/.local/bin/dcg.exe" "dcg.exe"
-assert_win_pe "$WINHOME/.local/bin/cass.exe" "cass.exe"
-assert_win_pe "$WINHOME/.local/bin/br.exe" "br.exe"
-assert_win_pe "$WINHOME/.local/bin/cm.exe" "cm.exe"
+assert_win_pe "dcg.exe"
+assert_win_pe "cass.exe"
+assert_win_pe "br.exe"
+assert_win_pe "cm.exe"
 
 hdr "PHASE 6 — Agent Mail (optional)"
 HEALTH=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/api/health 2>&1)

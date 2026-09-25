@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "& 'C:\\Users\\{{WIN_USER}}\\.local\\bin\\dcg.exe'",
+            "command": "& dcg",
             "shell": "powershell"
           }
         ]
