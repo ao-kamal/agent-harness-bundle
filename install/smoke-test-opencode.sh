@@ -121,9 +121,9 @@ else
 fi
 
 hdr "PHASE 6 — Agent Mail (optional)"
-HEALTH=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/health 2>&1)
+HEALTH=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/api/health 2>&1)
 case "$HEALTH" in
-  *'"status":"ready"'*) pass "Agent Mail healthy at 127.0.0.1:8765" ;;
+  *'"status":"ready"'*|*'"status":"ok"'*) pass "Agent Mail healthy at 127.0.0.1:8765/api/health" ;;
   *) skip "Agent Mail healthy" "WSL boot hook not up" ;;
 esac
 

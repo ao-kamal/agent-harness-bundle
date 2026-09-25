@@ -33,8 +33,12 @@ source "$ENV_FILE"
 : "${WIN_USER:?wsl-setup.env must set WIN_USER}"
 : "${BUNDLE_ROOT:?wsl-setup.env must set BUNDLE_ROOT (as a /mnt/c path)}"
 KIMI_ENABLED="${KIMI_ENABLED:-1}"
+SKIP_CLAUDE="${SKIP_CLAUDE:-0}"
 CFG="$BUNDLE_ROOT/config/wsl"
 WINHOME="/mnt/c/Users/$WIN_USER"
+# Tool installers write to /root/.local/bin. Non-interactive bash does not
+# source .bashrc here, so make the directory visible before every PATH check.
+export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 
 # ---------- lock + state ----------
 LOCK_DIR=/tmp/.harness-bundle-wsl.lock
@@ -137,6 +141,10 @@ if ! done_step symlinks; then
     ".claude/skills:/root/.claude/skills" \
     ".local/share/caam:/root/.local/share/caam"; do
     winrel="${pair%%:*}"; link="${pair##*:}"
+    if [ "$SKIP_CLAUDE" = "1" ] && [ "$winrel" = ".claude/.credentials.json" ]; then
+      note "OpenCode-only: credentials symlink skipped"
+      continue
+    fi
     target="$WINHOME/$winrel"
     if [ -e "$target" ]; then
       [ -L "$link" ] || [ ! -e "$link" ] || mv "$link" "$link.pre-bundle.$(date +%s)"
@@ -155,7 +163,9 @@ if ! done_step symlinks; then
 fi
 
 # ---------- step: Claude Code in WSL ----------
-if ! done_step claude-code; then
+if [ "$SKIP_CLAUDE" = "1" ]; then
+  note "OpenCode-only: Claude Code WSL install skipped"
+elif ! done_step claude-code; then
   if [ -x /root/.local/bin/claude ]; then
     ok "Claude Code already present in WSL"
   else
@@ -187,10 +197,50 @@ inst br    bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthst
 inst ubs   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/refs/tags/v5.3.13/install.sh" | bash'
 inst dcg   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/refs/tags/v0.12.0/install.sh" | bash -s -- --easy-mode'
 inst ntm   bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/ntm/refs/tags/v1.29.3/install.sh" | bash -s -- --easy-mode'
-inst agent-mail bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail/refs/tags/v0.3.4/scripts/install.sh" | bash -s -- --yes'
+inst agent-mail bash -c 'curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail/refs/tags/v0.3.4/scripts/install.sh" | bash -s -- --yes --no-start'
+
+# The v0.3.4 installer creates only a shell alias named `am`; it does not
+# install an executable. The harness boot hook and smoke tests require one.
+# Install a real wrapper around the upstream server script. It loads the
+# canonical bearer from config.env without printing it.
+AM_REPO="/root/.local/share/mcp_agent_mail"
+if [ -x "$AM_REPO/scripts/run_server_with_token.sh" ]; then
+  cat > /usr/local/bin/am <<'AM_WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+REPO_DIR="${AGENT_MAIL_REPO_DIR:-/root/.local/share/mcp_agent_mail}"
+export PATH="/root/.local/bin:$PATH"
+if [ "${1:-}" = "serve-http" ]; then shift; fi
+case "${1:-}" in
+  --version|-V|version)
+    v=$(cd "$REPO_DIR" && uv run python -c 'import importlib.metadata as m; print(m.version("mcp-agent-mail"))' 2>/dev/null || printf '0.3.4')
+    printf 'am %s\n' "$v"
+    exit 0
+    ;;
+  --help|-h)
+    printf 'Usage: am serve-http [--host HOST] [--port PORT]\n'
+    exit 0
+    ;;
+esac
+if [ -f /root/.config/mcp-agent-mail/config.env ]; then
+  token=$(grep -E '^HTTP_BEARER_TOKEN=' /root/.config/mcp-agent-mail/config.env 2>/dev/null | tail -n 1 | sed -E 's/^HTTP_BEARER_TOKEN=//' || true)
+  if [ -n "$token" ]; then export HTTP_BEARER_TOKEN="$token"; fi
+fi
+cd "$REPO_DIR"
+exec "$REPO_DIR/scripts/run_server_with_token.sh" "$@"
+AM_WRAPPER
+  chmod 755 /usr/local/bin/am
+  mkdir -p /root/.local/bin
+  ln -sfn /usr/local/bin/am /root/.local/bin/am
+  note "Agent Mail am wrapper installed (v0.3.4 / /api/health contract)"
+fi
 
 # bv: upstream install.sh has broken prebuilt detection (falls back to a slow
 # Go source build) — use the release tarball directly, checksum-verified.
+if ! done_step tool-bv && command -v bv >/dev/null 2>&1; then
+  ok "bv already present: $(bv --version 2>/dev/null | head -1)"
+  mark_step tool-bv
+fi
 if ! done_step tool-bv; then
   info "Installing bv (direct tarball — upstream installer's prebuilt detection is broken)"
   BVTMP=$(mktemp -d /tmp/bv-XXXXXX)
@@ -297,7 +347,7 @@ echo ""
 echo "NEXT (install.ps1 does this automatically):"
 echo "  1. wsl --shutdown   (from Windows)"
 echo "  2. restart the distro and verify /root/.local/share/mount-fast-data.log shows a fresh 'boot hook start'"
-echo "  3. verify Agent Mail: curl http://127.0.0.1:8765/health   (ALWAYS 127.0.0.1, never localhost)"
+echo "  3. verify Agent Mail: curl http://127.0.0.1:8765/api/health   (ALWAYS 127.0.0.1, never localhost)"
 if grep -q FAILED <<< "${SUMMARY[*]:-}"; then
   warn "Some tools failed to install — re-run this script to retry just those (state is preserved)."
   exit 10

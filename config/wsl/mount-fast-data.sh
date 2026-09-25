@@ -25,8 +25,8 @@ LOG=/root/.local/share/mount-fast-data.log
   # WSL-native am server is CANONICAL (a Windows-native daemon build hits
   # NTFS durable-write failures in its write-back queue). Bind 0.0.0.0 so
   # mirrored-mode clients on both sides can reach 127.0.0.1:8765.
-  if ! pgrep -f "am serve-http" >/dev/null 2>&1; then
-    nohup /root/.local/bin/am serve-http --host 0.0.0.0 --port 8765 >> /root/.config/mcp-agent-mail/serve.log 2>&1 &
+  if ! pgrep -f "mcp_agent_mail.cli serve-http" >/dev/null 2>&1; then
+    nohup /usr/local/bin/am serve-http --host 0.0.0.0 --port 8765 >> /root/.config/mcp-agent-mail/serve.log 2>&1 &
     echo "$(date -Is) agent-mail server started"
   fi
 } >> "$LOG" 2>&1

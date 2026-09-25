@@ -12,18 +12,18 @@
 # Architecture summary this script assumes:
 #   - Agent Mail's "Agent Mail Daemon" Windows scheduled task and native mcp-agent-mail.exe
 #     process NO LONGER EXIST (retired 2026-06-04: NTFS durable-write failures). The server
-#     is WSL-native (`am serve-http`), auto-started only by the wsl.conf [boot] command hook
+#     is WSL-native (`mcp_agent_mail.cli serve-http`), auto-started only by the wsl.conf [boot] command hook
 #     (/usr/local/sbin/mount-fast-data.sh) on a WSL cold boot — not systemd, not cron, not a
 #     Windows scheduled task.
 #   - Windows reaches it via mirrored networking, but ONLY at 127.0.0.1:8765 — NEVER
-#     localhost:8765. localhost resolves IPv6 (::1) first on Windows; am serve-http is
+#     localhost:8765. localhost resolves IPv6 (::1) first on Windows; mcp_agent_mail.cli serve-http is
 #     IPv4-only; the IPv6 loopback path blackholes (hangs to timeout) under mirrored mode.
 #     Every probe in this script uses the literal 127.0.0.1, never the hostname.
 #
 # Run from Windows-side bash (Git Bash / WSL doesn't matter — uses absolute paths).
 # Side effects: creates throwaway tmux sessions + project dirs in /root/ntm_Dev, which it
 #               cleans up. Phase 11 gracefully SIGTERMs and manually relaunches the WSL-native
-#               `am serve-http` process (NEVER -9 / taskkill — that's the historical WAL-
+#               `mcp_agent_mail.cli serve-http` process (NEVER -9 / taskkill — that's the historical WAL-
 #               corruption trigger) — a brief, real interruption to Agent Mail for anyone else
 #               using it. Don't run this script while a swarm is mid-flight.
 
@@ -105,8 +105,8 @@ assert_nonempty() {
 probe_am_health_win() {
   local out="" i
   for i in 1 2 3; do
-    out=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/health 2>&1)
-    case "$out" in *'"status":"ready"'*) echo "$out"; return 0 ;; esac
+    out=$(curl.exe -s --max-time 5 http://127.0.0.1:8765/api/health 2>&1)
+    case "$out" in *'"status":"ready"'*|*'"status":"ok"'*) echo "$out"; return 0 ;; esac
     sleep 5
   done
   echo "$out"
@@ -116,8 +116,8 @@ probe_am_health_win() {
 probe_am_health_wsl() {
   local out="" i
   for i in 1 2 3; do
-    out=$(wsl_run 'curl -s --max-time 5 http://127.0.0.1:8765/health 2>&1')
-    case "$out" in *'"status":"ready"'*) echo "$out"; return 0 ;; esac
+    out=$(wsl_run 'curl -s --max-time 5 http://127.0.0.1:8765/api/health 2>&1')
+    case "$out" in *'"status":"ready"'*|*'"status":"ok"'*) echo "$out"; return 0 ;; esac
     sleep 5
   done
   echo "$out"
@@ -139,7 +139,7 @@ am_reachability_hint() {
   echo -e "    ${D}    WSL hostname -I:      ${wsl_ip}${N}"
   echo -e "    ${D}    Windows LAN adapter:  ${win_ip}  (should match WSL's IP under true mirrored mode)${N}"
   echo -e "    ${D}[2] client used 127.0.0.1, not localhost? localhost resolves IPv6 first on Windows;${N}"
-  echo -e "    ${D}    am serve-http is IPv4-only -> IPv6-first clients blackhole under mirrored mode.${N}"
+  echo -e "    ${D}    mcp_agent_mail.cli serve-http is IPv4-only -> IPv6-first clients blackhole under mirrored mode.${N}"
   echo -e "    ${D}[3] portproxy rules:      ${portproxy:-<empty, expected>}${N}"
   echo -e "    ${D}    Hyper-V VM DefaultInboundAction: ${fw_default}  (should be Allow)${N}"
 }
@@ -316,10 +316,10 @@ hdr "PHASE 5 — Agent Mail reachability"
 # retired infra, not a real signal. Every health probe below uses the literal 127.0.0.1, never
 # localhost (see architecture note at the top of this file).
 
-# 5.1 — Process check, WSL-native. Process name on the process table is "am serve-http", not
+# 5.1 — Process check, WSL-native. Process name on the process table is "mcp_agent_mail.cli serve-http", not
 # "mcp-agent-mail" (pgrep mcp-agent-mail misses it — confirmed).
-AM_PROC=$(wsl_run 'pgrep -af "am serve-http" 2>&1')
-assert_contains "$AM_PROC" "am serve-http" "WSL: am serve-http process running (pgrep -af)"
+AM_PROC=$(wsl_run 'pgrep -af "mcp_agent_mail.cli serve-http" 2>&1')
+assert_contains "$AM_PROC" "mcp_agent_mail.cli serve-http" "WSL: mcp_agent_mail.cli serve-http process running (pgrep -af)"
 
 # 5.2 — Boot-hook liveness, replacing the retired "Agent Mail Daemon" scheduled-task check.
 # The boot hook (/usr/local/sbin/mount-fast-data.sh, wsl.conf [boot] command) only logs a fresh
@@ -330,10 +330,10 @@ assert_contains "$AM_PROC" "am serve-http" "WSL: am serve-http process running (
 BOOT_LOG_TAIL=$(wsl_run 'tail -50 /root/.local/share/mount-fast-data.log 2>&1')
 if echo "$BOOT_LOG_TAIL" | grep -q "agent-mail server started"; then
   pass "Boot-hook log shows 'agent-mail server started'"
-elif echo "$AM_PROC" | grep -q "am serve-http"; then
-  pass "Boot-hook log has no recent start line, but am serve-http is confirmed running (log entry may predate this boot cycle — accepted)"
+elif echo "$AM_PROC" | grep -q "mcp_agent_mail.cli serve-http"; then
+  pass "Boot-hook log has no recent start line, but mcp_agent_mail.cli serve-http is confirmed running (log entry may predate this boot cycle — accepted)"
 else
-  fail "Agent Mail boot-hook liveness" "no start line in mount-fast-data.log and no running am serve-http process"
+  fail "Agent Mail boot-hook liveness" "no start line in mount-fast-data.log and no running mcp_agent_mail.cli serve-http process"
 fi
 
 # 5.3 — Cross-OS reachability. This is the actual point of the phase — the check that would
@@ -341,18 +341,18 @@ fi
 # tries) covers post-start integrity-guard delay; on failure, print the three-layer hint instead
 # of a bare FAIL.
 WIN_HEALTH=$(probe_am_health_win)
-if echo "$WIN_HEALTH" | grep -q '"status":"ready"'; then
-  pass "Windows curl.exe http://127.0.0.1:8765/health → ready"
+if echo "$WIN_HEALTH" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ready|ok)"'; then
+  pass "Windows curl.exe http://127.0.0.1:8765/api/health → ready"
 else
-  fail "Windows curl.exe http://127.0.0.1:8765/health → ready" "$WIN_HEALTH"
+  fail "Windows curl.exe http://127.0.0.1:8765/api/health → ready" "$WIN_HEALTH"
   am_reachability_hint
 fi
 
 WSL_HEALTH=$(probe_am_health_wsl)
-if echo "$WSL_HEALTH" | grep -q '"status":"ready"'; then
-  pass "WSL curl http://127.0.0.1:8765/health → ready"
+if echo "$WSL_HEALTH" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ready|ok)"'; then
+  pass "WSL curl http://127.0.0.1:8765/api/health → ready"
 else
-  fail "WSL curl http://127.0.0.1:8765/health → ready" "$WSL_HEALTH"
+  fail "WSL curl http://127.0.0.1:8765/api/health → ready" "$WSL_HEALTH"
   am_reachability_hint
 fi
 
@@ -538,8 +538,8 @@ LEFTOVER_DIRS=$(wsl_run "ls /root/ntm_Dev/ | grep -c _smoke_test")
 assert_eq "$LEFTOVER_DIRS" "0" "No leftover smoke-test project dirs"
 
 # Moved from Windows Get-Process (retired infra) to WSL pgrep — the process lives in WSL now.
-AM_STILL=$(wsl_run 'pgrep -f "am serve-http" >/dev/null 2>&1 && echo present || echo absent')
-assert_eq "$AM_STILL" "present" "Agent Mail (am serve-http) still running in WSL after tests"
+AM_STILL=$(wsl_run 'pgrep -f "mcp_agent_mail.cli serve-http" >/dev/null 2>&1 && echo present || echo absent')
+assert_eq "$AM_STILL" "present" "Agent Mail (mcp_agent_mail.cli serve-http) still running in WSL after tests"
 
 # =============================================================================
 hdr "PHASE 11 — Persistence (graceful stop + manual relaunch → verify recovery)"
@@ -550,7 +550,7 @@ hdr "PHASE 11 — Persistence (graceful stop + manual relaunch → verify recove
 # resulting chicken-and-egg repair-vs-self-heal ordering bug in detail). That workaround was
 # specific to the Windows-native binary's startup path and a scheduled-task relaunch model.
 #
-# The CURRENT architecture is different in kind, not just location: `am serve-http` is ONLY
+# The CURRENT architecture is different in kind, not just location: `mcp_agent_mail.cli serve-http` is ONLY
 # auto-started by the wsl.conf [boot] command hook on a WSL COLD BOOT (mount-fast-data.sh) —
 # there is no scheduled task and no systemd unit backing it (a systemd/user/agent-mail.service
 # unit file exists but is confirmed disabled/vestigial, per 05-infra.md §6). This test
@@ -563,27 +563,27 @@ hdr "PHASE 11 — Persistence (graceful stop + manual relaunch → verify recove
 # Graceful stop only — SIGTERM (pkill's default signal, made explicit with -15 below). This
 # script must NEVER send SIGKILL/-9/taskkill to Agent Mail; that's the historical WAL-corruption
 # trigger (tooling-update-runbook.md gotcha #12).
-wsl_run 'pkill -15 -f "am serve-http" 2>&1; echo stop_signal_sent' >/dev/null
+wsl_run 'pkill -15 -f "mcp_agent_mail.cli serve-http" 2>&1; echo stop_signal_sent' >/dev/null
 sleep 3
-PROC_GONE=$(wsl_run 'pgrep -f "am serve-http" >/dev/null 2>&1 && echo present || echo absent')
-assert_eq "$PROC_GONE" "absent" "Agent Mail (am serve-http) stopped gracefully (SIGTERM)"
+PROC_GONE=$(wsl_run 'pgrep -f "mcp_agent_mail.cli serve-http" >/dev/null 2>&1 && echo present || echo absent')
+assert_eq "$PROC_GONE" "absent" "Agent Mail (mcp_agent_mail.cli serve-http) stopped gracefully (SIGTERM)"
 
 # Manual relaunch — same invocation the boot hook itself uses. Append redirect (>>) only, never
 # truncating (>), so the log's history survives (dcg's redirect-truncate-root-home guard exists
 # for exactly this reason — tooling-update-runbook.md gotcha #14b).
-wsl_run 'nohup /root/.local/bin/am serve-http --host 0.0.0.0 --port 8765 >> /root/.config/mcp-agent-mail/serve.log 2>&1 & disown; echo relaunched' >/dev/null
+wsl_run 'nohup /usr/local/bin/am serve-http --host 0.0.0.0 --port 8765 >> /root/.config/mcp-agent-mail/serve.log 2>&1 & disown; echo relaunched' >/dev/null
 echo -e "  ${D}waiting up to 15s for manual relaunch to bind + pass startup integrity checks...${N}"
 
 RESTART_HEALTH=$(probe_am_health_wsl)
-if echo "$RESTART_HEALTH" | grep -q '"status":"ready"'; then
+if echo "$RESTART_HEALTH" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ready|ok)"'; then
   pass "Agent Mail back up after manual relaunch (WSL curl 127.0.0.1:8765/health → ready)"
 else
   fail "Agent Mail back up after manual relaunch" "$RESTART_HEALTH"
   am_reachability_hint
 fi
 
-PROC_BACK=$(wsl_run 'pgrep -af "am serve-http" 2>&1')
-assert_contains "$PROC_BACK" "am serve-http" "am serve-http process confirmed running after manual relaunch"
+PROC_BACK=$(wsl_run 'pgrep -af "mcp_agent_mail.cli serve-http" 2>&1')
+assert_contains "$PROC_BACK" "mcp_agent_mail.cli serve-http" "mcp_agent_mail.cli serve-http process confirmed running after manual relaunch"
 
 # =============================================================================
 hdr "PHASE 12 — Summary"

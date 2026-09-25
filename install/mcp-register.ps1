@@ -11,10 +11,10 @@ function Write-Warn2 { param($m) Write-Host "WARN $m" -ForegroundColor Yellow }
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw "claude CLI not found - run install.ps1 stages first" }
 
 Write-Info "Windows-side registrations (user scope)"
-claude mcp add playwright "npx @playwright/mcp@latest" --scope user 2>$null
-claude mcp add mcp-youtube "npx -y @anaisbetts/mcp-youtube" --scope user 2>$null
-claude mcp add apify --transport http https://mcp.apify.com --scope user 2>$null
-Write-Ok "playwright / mcp-youtube / apify registered (apify authenticates on first connect)"
+# Operator ruling OD-3: do not provision playwright, mcp-youtube, or apify.
+# They time out or require authentication on this machine. Agent Mail is the
+# only MCP registered by this installer.
+Write-Ok "playwright / mcp-youtube / apify intentionally not registered (OD-3)"
 
 # Agent Mail: token comes from the config the WSL stage generated. ALWAYS 127.0.0.1, never localhost.
 $amCfg = Join-Path $env:USERPROFILE '.config\mcp-agent-mail\config.env'
