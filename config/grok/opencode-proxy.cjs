@@ -27,17 +27,32 @@ function cleanParameters(schema) {
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
+
+const GROK_DIR = path.join(process.env.USERPROFILE || '', '.grok');
+const PROXY_LOG = path.join(GROK_DIR, 'proxy-debug.log');
+const GROK_CONFIG = path.join(GROK_DIR, 'config.toml');
+
+const SENSITIVE_HEADERS = /^(authorization|x-api-key|cookie|proxy-authorization)$/i;
+
+function redactHeaders(headers) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    out[k] = SENSITIVE_HEADERS.test(k) ? '[redacted]' : v;
+  }
+  return out;
+}
 
 process.on('uncaughtException', (err) => {
   try {
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UncaughtException: ${err.stack || err.message}\n`);
+    fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] UncaughtException: ${err.stack || err.message}\n`);
   } catch (e) {}
 });
 
 process.on('unhandledRejection', (reason) => {
   try {
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] UnhandledRejection: ${reason}\n`);
+    fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] UnhandledRejection: ${reason}\n`);
   } catch (e) {}
 });
 
@@ -122,19 +137,145 @@ function routeAnthropicModel(clientModel) {
   return { model, targetBase, endpointType };
 }
 
-function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
-  headers['user-agent'] = 'opencode/1.18.25';
-  headers['x-opencode-client'] = 'cli';
-  headers['x-opencode-project'] = 'global';
-  headers['x-opencode-session'] = (clientReqHeaders && clientReqHeaders['x-opencode-session']) || 'opencode-cli-session';
-  headers['x-opencode-request'] = crypto.randomUUID();
+const OPENCODE_VERSION = process.env.OPENCODE_VERSION || '1.18.25';
+const OPENCODE_USER_AGENT =
+  process.env.OPENCODE_USER_AGENT ||
+  `opencode/${OPENCODE_VERSION} ai-sdk/provider-utils/4.0.38 runtime/bun/1.3.14`;
+const OPENCODE_CLIENT = process.env.OPENCODE_CLIENT || 'cli';
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const SES_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+const MSG_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+const FREE_TIER_PLACEHOLDER_TOOLS = [
+  {
+    type: 'function',
+    name: 'read',
+    description: 'Read a file from the workspace',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'Absolute file path' } },
+      required: ['path'],
+    },
+  },
+];
 
-  if (convertedPayload && convertedPayload.model) {
-    headers['x-opencode-model'] = convertedPayload.model;
+function headerValue(headers, name) {
+  if (!headers) return undefined;
+  const want = name.toLowerCase();
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === want) return Array.isArray(v) ? v[0] : v;
   }
-  if (clientReqHeaders && clientReqHeaders['x-opencode-directory']) {
-    headers['x-opencode-directory'] = clientReqHeaders['x-opencode-directory'];
+  return undefined;
+}
+
+function randomBase62(length) {
+  const bytes = crypto.randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i++) out += BASE62[bytes[i] % 62];
+  return out;
+}
+
+let lastIdTimestamp = 0;
+let idCounter = 0;
+function createOpencodeId(prefix, direction) {
+  const currentTimestamp = Date.now();
+  if (currentTimestamp !== lastIdTimestamp) {
+    lastIdTimestamp = currentTimestamp;
+    idCounter = 0;
   }
+  idCounter++;
+  let now = BigInt(currentTimestamp) * 0x1000n + BigInt(idCounter);
+  if (direction === 'descending') now = ~now;
+  const timeBytes = Buffer.alloc(6);
+  for (let i = 0; i < 6; i++) {
+    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & 0xffn);
+  }
+  return prefix + '_' + timeBytes.toString('hex') + randomBase62(14);
+}
+
+function canonicalId(prefix, seed) {
+  const bytes = crypto.createHash('sha256').update('opencode\0' + prefix + '\0' + seed).digest();
+  let b62 = '';
+  for (let i = 0; i < 14; i++) b62 += BASE62[bytes[6 + i] % 62];
+  return prefix + bytes.subarray(0, 6).toString('hex') + b62;
+}
+
+function sessionSeedFromClient(clientReqHeaders, convertedPayload) {
+  const candidates = [
+    'x-opencode-session',
+    'x-session-id',
+    'x-grok-session-id',
+    'x-conversation-id',
+    'x-opencode-directory',
+  ];
+  for (const name of candidates) {
+    const v = headerValue(clientReqHeaders, name);
+    if (v && String(v).trim()) return String(v).trim();
+  }
+  const model = convertedPayload && convertedPayload.model;
+  return (process.env.USERNAME || 'grok') + ':opencode:' + (model || 'default');
+}
+
+function isFreeTierModel(model) {
+  const m = String(model || '');
+  return m.endsWith('-free') || m.includes('contributor-free');
+}
+
+function shapeFreeTierBody(parsed) {
+  if (!parsed || typeof parsed !== 'object') return parsed;
+  if (!isFreeTierModel(parsed.model)) return parsed;
+  parsed.stream = true;
+  if (!Array.isArray(parsed.tools) || parsed.tools.length === 0) {
+    parsed.tools = FREE_TIER_PLACEHOLDER_TOOLS;
+  }
+  return parsed;
+}
+
+function defaultProjectId() {
+  if (process.env.OPENCODE_PROJECT && /^[0-9a-f]{40}$/i.test(process.env.OPENCODE_PROJECT.trim())) {
+    return process.env.OPENCODE_PROJECT.trim().toLowerCase();
+  }
+  const dir = (process.env.OPENCODE_PROJECT_DIR || process.cwd()).replace(/\\/g, '/');
+  try {
+    const dbPath = require('path').join(process.env.USERPROFILE || '', '.local', 'share', 'opencode', 'opencode.db');
+    const bytes = fs.readFileSync(dbPath);
+    const text = bytes.toString('utf8');
+    const idx = text.indexOf(dir);
+    if (idx > 40) {
+      const window = text.slice(Math.max(0, idx - 80), idx);
+      const m = window.match(/([0-9a-f]{40})/g);
+      if (m && m.length) return m[m.length - 1];
+    }
+  } catch (e) {}
+  return crypto.createHash('sha1').update(dir).digest('hex');
+}
+
+function applyOpenCodeHeaders(headers, clientReqHeaders, convertedPayload) {
+  headers['user-agent'] = OPENCODE_USER_AGENT;
+  headers['x-opencode-client'] = headerValue(clientReqHeaders, 'x-opencode-client') || OPENCODE_CLIENT;
+  const suppliedProject = headerValue(clientReqHeaders, 'x-opencode-project');
+  headers['x-opencode-project'] =
+    suppliedProject && /^[0-9a-f]{40}$/i.test(suppliedProject.trim())
+      ? suppliedProject.trim().toLowerCase()
+      : defaultProjectId();
+  headers['accept'] = headerValue(headers, 'accept') || '*/*';
+  headers['connection'] = 'keep-alive';
+
+  const rawSession = headerValue(clientReqHeaders, 'x-opencode-session');
+  if (rawSession && SES_RE.test(rawSession.trim())) {
+    headers['x-opencode-session'] = rawSession.trim();
+  } else {
+    headers['x-opencode-session'] = canonicalId('ses_', sessionSeedFromClient(clientReqHeaders, convertedPayload));
+  }
+
+  const rawReq = headerValue(clientReqHeaders, 'x-opencode-request');
+  if (rawReq && MSG_RE.test(rawReq.trim())) {
+    headers['x-opencode-request'] = rawReq.trim();
+  } else {
+    headers['x-opencode-request'] = createOpencodeId('msg', 'ascending');
+  }
+
+  const dir = headerValue(clientReqHeaders, 'x-opencode-directory');
+  if (dir) headers['x-opencode-directory'] = dir;
 }
 
 const sanitizeParameters = cleanParameters;
@@ -370,7 +511,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
   let activeKey = null;
   try {
-    const configText = fs.readFileSync('C:\\Users\\USER\\.grok\\config.toml', 'utf8');
+    const configText = fs.readFileSync(GROK_CONFIG, 'utf8');
     const m = configText.match(/api_key\s*=\s*"([^"]+)"/);
     if (m && m[1].startsWith('sk-')) activeKey = m[1];
   } catch (e) {}
@@ -383,13 +524,13 @@ const server = http.createServer((clientReq, clientRes) => {
 
   clientReq.on('error', (err) => {
     try {
-      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] ClientReq Error: ${err.message}\n`);
+      fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] ClientReq Error: ${err.message}\n`);
     } catch (e) {}
   });
 
   clientRes.on('error', (err) => {
     try {
-      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] ClientRes Error: ${err.message}\n`);
+      fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] ClientRes Error: ${err.message}\n`);
     } catch (e) {}
   });
 
@@ -425,8 +566,9 @@ const server = http.createServer((clientReq, clientRes) => {
         method: 'GET',
         headers: {
           ...headers,
-          'user-agent': 'opencode/1.18.25',
-          'x-opencode-client': 'cli'
+          'user-agent': OPENCODE_USER_AGENT,
+          'x-opencode-client': OPENCODE_CLIENT,
+          'x-opencode-project': 'global',
         }
       }, (res) => {
         let d = '';
@@ -517,6 +659,7 @@ const server = http.createServer((clientReq, clientRes) => {
         targetPath = `${targetBase}/chat/completions`;
       }
 
+      shapeFreeTierBody(outgoingPayload);
       const outgoingBody = Buffer.from(JSON.stringify(outgoingPayload));
 
       headers['content-type'] = 'application/json';
@@ -533,7 +676,7 @@ const server = http.createServer((clientReq, clientRes) => {
         headers: headers
       };
 
-      fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] [Anthropic->OpenCode] Model: ${clientModel} -> ${model} (${targetPath}) [${endpointType}]\n`);
+      fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] [Anthropic->OpenCode] Model: ${clientModel} -> ${model} (${targetPath}) [${endpointType}]\n`);
 
       const proxyReq = https.request(options, (proxyRes) => {
         if (proxyRes.statusCode >= 400) {
@@ -542,8 +685,8 @@ const server = http.createServer((clientReq, clientRes) => {
           proxyRes.on('end', () => {
             const errBody = Buffer.concat(errChunks).toString('utf8');
             try {
-              fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
-              fs.writeFileSync('C:\\Users\\USER\\.grok\\debug-last-failed-request.json', JSON.stringify({
+              fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
+              fs.writeFileSync(path.join(GROK_DIR, 'debug-last-failed-request.json'), JSON.stringify({
                 timestamp: new Date().toISOString(),
                 statusCode: proxyRes.statusCode,
                 targetPath,
@@ -968,7 +1111,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
       proxyReq.on('error', (err) => {
         try {
-          fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Anthropic ProxyReq Error: ${err.message}\n`);
+          fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] Anthropic ProxyReq Error: ${err.message}\n`);
         } catch (e) {}
         try {
           clientRes.writeHead(502, { 'Content-Type': 'application/json' });
@@ -1083,6 +1226,7 @@ const server = http.createServer((clientReq, clientRes) => {
           parsed.messages = parsed.messages.filter(it => it.type !== 'reasoning');
         }
 
+        shapeFreeTierBody(parsed);
         applyOpenCodeHeaders(headers, clientReq.headers, parsed);
         finalBody = JSON.stringify(parsed);
       } catch (e) {}
@@ -1108,12 +1252,12 @@ const server = http.createServer((clientReq, clientRes) => {
         proxyRes.on('end', () => {
           const errBody = Buffer.concat(errChunks).toString('utf8');
           try {
-            fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
-            fs.writeFileSync('C:\\Users\\USER\\.grok\\last-failed-request.json', JSON.stringify({
+            fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] Upstream Error [${proxyRes.statusCode}]: ${errBody.slice(0, 500)}\n`);
+            fs.writeFileSync(path.join(GROK_DIR, 'last-failed-request.json'), JSON.stringify({
               time: new Date().toISOString(),
               statusCode: proxyRes.statusCode,
               targetPath,
-              headers,
+              headers: redactHeaders(headers),
               body: finalBody,
               error: errBody
             }, null, 2));
@@ -1169,7 +1313,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
     proxyReq.on('error', (err) => {
       try {
-        fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Upstream ProxyReq Error: ${err.message} (${clientReq.method} ${targetPath})\n`);
+        fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] Upstream ProxyReq Error: ${err.message} (${clientReq.method} ${targetPath})\n`);
       } catch (e) {}
       try {
         clientRes.writeHead(502, { 'Content-Type': 'application/json' });
@@ -1186,7 +1330,7 @@ const server = http.createServer((clientReq, clientRes) => {
 
 server.on('clientError', (err, socket) => {
   try {
-    fs.appendFileSync('C:\\Users\\USER\\.grok\\proxy-debug.log', `[${new Date().toISOString()}] Server ClientError: ${err.message}\n`);
+    fs.appendFileSync('PROXY_LOG', `[${new Date().toISOString()}] Server ClientError: ${err.message}\n`);
   } catch (e) {}
   if (err.code === 'ECONNRESET' || !socket.writable) {
     return;
