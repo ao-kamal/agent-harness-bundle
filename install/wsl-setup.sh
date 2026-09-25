@@ -66,8 +66,14 @@ if ! curl -fsS --connect-timeout 5 -o /dev/null https://api.github.com; then
 fi
 ok "preflight passed"
 
-render() { # render <src> <dst> : substitute {{WIN_USER}}
-  sed "s/{{WIN_USER}}/$WIN_USER/g" "$1" > "$2"
+render() { # render <src> <dst> : substitute {{WIN_USER}}, force LF
+  # Strip any CR first. The bundle is cloned on Windows where core.autocrlf
+  # can check out an extensionless payload (e.g. config/antigravity/agy-wsl-wrapper)
+  # with CRLF, and a CRLF shebang in /usr/local/bin yields
+  # "/bin/bash^M: bad interpreter" at WSL boot. .gitattributes pins these paths
+  # to LF, but a rendering step that can emit an unrunnable shim is a trap.
+  sed "s/\r$//; s/{{WIN_USER}}/$WIN_USER/g" "$1" > "$2"
+  chmod 755 "$2"
 }
 
 # ---------- step: apt basics ----------

@@ -38,10 +38,25 @@ else
   skip "rules junction (no ~/.claude/rules yet)"
 fi
 
-if command -v agy >/dev/null 2>&1; then
-  pass "agy on PATH"
+# Match install-antigravity.ps1's Get-AgyExe. The official installer drops the
+# binary in %LOCALAPPDATA%\agy\bin and only afterwards appends that directory
+# to the User PATH, so a shell opened before that registry edit cannot see it
+# even though the CLI is installed. Probing `command -v` alone therefore
+# reports a false SKIP on a correctly provisioned host.
+AGY_CANON=""
+if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+  AGY_CANON="$(cygpath -u "$LOCALAPPDATA")/agy/bin/agy.exe"
 else
-  skip "agy on PATH (install official CLI)"
+  AGY_CANON="$WINHOME/AppData/Local/agy/bin/agy.exe"
+fi
+
+if command -v agy >/dev/null 2>&1; then
+  pass "agy installed and on PATH ($(command -v agy))"
+elif [ -x "$AGY_CANON" ]; then
+  pass "agy installed ($AGY_CANON)"
+  skip "agy on PATH in this shell (restart the terminal to pick up the new User PATH)"
+else
+  skip "agy installed (install official CLI: irm https://antigravity.google/cli/install.ps1 | iex)"
 fi
 
 echo "pass=$PASS fail=$FAIL skip=$SKIP"

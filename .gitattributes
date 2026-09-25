@@ -16,3 +16,4 @@ payload/bin/branch-back text eol=lf
 *.ps1 text eol=crlf
 *.vbs text eol=crlf
 *.cmd text eol=crlf
+config/antigravity/** text eol=lf
