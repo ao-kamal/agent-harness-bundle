@@ -46,11 +46,31 @@ if test -d "$CLAUDE_HOME/skills" && ls -d "$CLAUDE_HOME/skills"/*/ >/dev/null 2>
 else
   fail "shared skills payload" "no skill directories under ~/.claude/skills"
 fi
-# A copied tree is a regression
-if test -d "$GROK_HOME/skills" && ls -d "$GROK_HOME/skills"/*/ >/dev/null 2>&1; then
-  fail "~/.grok/skills should be empty" "second skills tree — delete it; Grok reads ~/.claude/skills"
+# The regression is a copied tree, not the mere presence of entries. A junction
+# or symlink into another skills root is the sanctioned adapter pattern, and a
+# skill that exists nowhere else is not a second brain. Only a real directory
+# duplicating a canonical skill counts.
+GROK_DUPES=0; GROK_LINKS=0; GROK_EXTRAS=""
+if test -d "$GROK_HOME/skills"; then
+  for entry in "$GROK_HOME/skills"/*/; do
+    test -e "$entry" || continue
+    name="$(basename "$entry")"
+    if [ -L "${entry%/}" ]; then
+      GROK_LINKS=$((GROK_LINKS+1))
+    elif [ -d "$CLAUDE_HOME/skills/$name" ]; then
+      GROK_DUPES=$((GROK_DUPES+1))
+    else
+      GROK_EXTRAS="$GROK_EXTRAS $name"
+    fi
+  done
+fi
+if [ "$GROK_DUPES" -gt 0 ]; then
+  fail "~/.grok/skills has no copied skills" "$GROK_DUPES duplicate(s) of ~/.claude/skills — delete the copies"
 else
-  pass "no second skills tree under ~/.grok"
+  detail="no copies"
+  [ "$GROK_LINKS" -gt 0 ] && detail="$detail, $GROK_LINKS link(s) ok"
+  [ -n "$GROK_EXTRAS" ] && detail="$detail, non-canonical:$GROK_EXTRAS"
+  pass "no copied skills under ~/.grok ($detail)"
 fi
 
 hdr "PHASE 3 — Thin adapter"
