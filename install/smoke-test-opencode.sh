@@ -70,6 +70,43 @@ else
   pass "no AGENTS.md override in the OpenCode config dir"
 fi
 
+# Slash-command shims. OpenCode builds its "/" menu from commands, not skills:
+# its schema has `command` and `skills` as unrelated keys and derives no command
+# per skill. Without a shim each skill still loads and is invocable through the
+# Skill tool, but is invisible to autocomplete — which is why only Impeccable
+# used to appear (npx impeccable install writes its own shim). The shims must be
+# pointers (skill({name})), never a second copy of the skill body.
+SHIM_DIR="$OC_HOME/commands"
+if test -d "$SHIM_DIR"; then
+  SKILL_COUNT=$(ls -d "$CLAUDE_HOME/skills"/*/ 2>/dev/null | wc -l | tr -d ' ')
+  SHIM_COUNT=$(ls "$SHIM_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  if test "$SHIM_COUNT" -ge 1; then
+    pass "slash-command shims present ($SHIM_COUNT for $SKILL_COUNT skills)"
+  else
+    fail "slash-command shims present" "none in $SHIM_DIR - run install-opencode.ps1"
+  fi
+  # Every skill should have a shim, or it is invisible in the "/" menu.
+  MISSING=0
+  for d in "$CLAUDE_HOME/skills"/*/; do
+    test -d "$d" || continue
+    base=$(basename "$d")
+    if [ ! -f "$SHIM_DIR/$base.md" ]; then MISSING=$((MISSING+1)); fi
+  done
+  if test "$MISSING" -eq 0; then
+    pass "every skill has a command shim"
+  else
+    fail "every skill has a command shim" "$MISSING skill(s) missing - regenerate with install-opencode.ps1"
+  fi
+  # A shim must reference the skill by name, not inline its content.
+  if grep -lq 'skill({ name:' "$SHIM_DIR"/*.md 2>/dev/null; then
+    pass "shims are pointers (skill({ name: ... })), not copies"
+  else
+    fail "shims are pointers" "no shim calls skill({name}) - a copy would break the one-brain rule"
+  fi
+else
+  fail "slash-command shims present" "no $SHIM_DIR - run install-opencode.ps1"
+fi
+
 hdr "PHASE 3 — Config wiring"
 if test -f "$OC_CONFIG"; then
   pass "opencode.jsonc present"

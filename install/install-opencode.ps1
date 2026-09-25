@@ -29,6 +29,23 @@ function Write-Utf8NoBom {
     [System.IO.File]::WriteAllText($Path, $Text, $utf8)
 }
 
+function Resolve-PythonExe {
+    # The WindowsApps python.exe alias wins PATH order on some machines and only
+    # prints the Store message, so prefer a real interpreter on disk.
+    foreach ($command in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
+        if ($command.Source -and ($command.Source -notmatch 'WindowsApps') -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+            return $command.Source
+        }
+    }
+    foreach ($root in @((Join-Path $env:LOCALAPPDATA 'Python'), (Join-Path $env:LOCALAPPDATA 'Programs\Python'))) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        $found = Get-ChildItem -LiteralPath $root -Filter 'python.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    return $null
+}
+$script:PythonExe = Resolve-PythonExe
+
 function Get-State {
     if (Test-Path $script:StateFile) { return (Get-Content $script:StateFile -Raw | ConvertFrom-Json) }
     return [pscustomobject]@{ completed = @() }
@@ -197,6 +214,38 @@ if (Test-Path $agentsMd) {
 }
 
 Complete-Stage $state 'adapter'
+
+# --- slash-command shims for the canonical skills ---
+# OpenCode fills its slash menu from commands, not skills. Its config schema has
+# `command` ("Command configuration") and `skills` ("Additional skill folder
+# paths") as unrelated keys, and it does not derive one command per skill. So the
+# ~112 skills in ~/.claude/skills load fine and are invocable through the Skill
+# tool, yet none of them appear under "/". Impeccable was the sole visible entry
+# only because `npx impeccable install` happens to write a command shim.
+#
+# These shims are pointers, not copies: each one just calls skill({name}). The
+# brain stays in ~/.claude/skills, so the one-brain rule is preserved. The
+# generator is dependency-free Python because field installs have no PyYAML.
+$shimGen = Join-Path $PSScriptRoot '_gen_skill_command_shims.py'
+if ($script:PythonExe -and (Test-Path $shimGen)) {
+    $skillsRoot = Join-Path $script:ClaudeHome 'skills'
+    if (Test-Path $skillsRoot) {
+        $shimOut = & $script:PythonExe $shimGen --skills $skillsRoot --out (Join-Path $script:OcHome 'commands') 2>&1
+        $shimExit = $LASTEXITCODE
+        $shimOut | ForEach-Object { Write-Host "  $_" }
+        if ($shimExit -eq 0) {
+            Complete-Stage $state 'skill-shims'
+        } else {
+            Write-Warn2 "skill command shim generation reported problems (exit $shimExit) - see lines above"
+        }
+    } else {
+        Write-Warn2 "no ~/.claude/skills yet; skipping command shims (run config-deploy first)"
+    }
+} else {
+    Write-Warn2 "skipping skill command shims: no python interpreter or generator script found"
+}
+
 Write-Ok "OpenCode adapter done. Skills come from ~/.claude/skills (official). Rules from ~/.claude/CLAUDE.md plus instructions glob."
+Write-Info "Skills are also exposed as slash commands; restart opencode to pick up new commands."
 Write-Info "Auth: opencode auth list    then    opencode auth login --provider opencode   if Zen is missing"
 Write-Info "TUI:  opencode"
