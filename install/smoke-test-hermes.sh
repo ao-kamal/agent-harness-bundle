@@ -20,8 +20,12 @@ ok()   { PASS=$((PASS+1)); printf "${G}PASS${N} %s\n" "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf "${R}FAIL${N} %s\n" "$1"; }
 skip() { SKIP=$((SKIP+1)); printf "${Y}SKIP${N} %s\n" "$1"; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/_windows-home.sh"
+
 WINUSER="${USERNAME:-$(powershell.exe -NoProfile -Command 'Write-Host -NoNewline $env:USERNAME' 2>/dev/null | tr -d '\r')}"
-BRAIN="C:/Users/$WINUSER/.claude/skills"
+WINHOME="$(_require_windows_home "$WINUSER")"
+BRAIN="$WINHOME/.claude/skills"
 
 echo "=== Hermes adapter smoke test ==="
 

@@ -16,14 +16,17 @@ fail() { echo -e "  ${R}FAIL${N} $1${2:+: ${D}$2${N}}"; FAILED_TESTS+=("$1"); FA
 skip() { echo -e "  ${Y}SKIP${N} $1 ${D}($2)${N}"; SKIP=$((SKIP+1)); }
 hdr()  { echo; echo -e "${B}=== $1 ===${N}"; }
 
-WINHOME="C:/Users/$WINUSER"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/_windows-home.sh"
+
+WINHOME="$(_require_windows_home "$WINUSER")"
 GROK_HOME="$WINHOME/.grok"
 CLAUDE_HOME="$WINHOME/.claude"
 GROK_BIN="$GROK_HOME/bin/grok.exe"
 
 echo
 echo -e "${B}Grok adapter smoke test${N}"
-echo -e "${D}$(date -Iseconds)  user=$WINUSER${N}"
+echo -e "${D}$(date -Iseconds)  user=$WINUSER  home=$WINHOME${N}"
 
 hdr "PHASE 1 — Grok CLI"
 if test -f "$GROK_BIN"; then
@@ -91,13 +94,17 @@ else
 fi
 
 hdr "PHASE 5 — Flywheel CLIs"
-assert_win_pe() {
-  local path="$1" name="$2"
-  if [ ! -f "$path" ]; then fail "Win: $name on disk" "not found at $path"; return; fi
-  python -c "import sys; b=open(sys.argv[1],'rb').read(2); sys.exit(0 if b==b'MZ' else 1)" "$path" \
-    && pass "Win: $name is a Windows PE" \
-    || fail "Win: $name is a Windows PE" "file exists but is not a PE (wrong release asset)"
-}
+  assert_win_pe() {
+    local path="$1" name="$2" py
+    if [ ! -f "$path" ]; then fail "Win: $name on disk" "not found at $path"; return; fi
+    if ! py="$(_resolve_python)"; then
+      fail "Win: $name is a Windows PE" "no python interpreter found (need python, python3, or py)"
+      return
+    fi
+    "$py" -c "import sys; b=open(sys.argv[1],'rb').read(2); sys.exit(0 if b==b'MZ' else 1)" "$path" \
+      && pass "Win: $name is a Windows PE" \
+      || fail "Win: $name is a Windows PE" "file exists but does not start with MZ (wrong release asset?)"
+  }
 assert_win_pe "$WINHOME/.local/bin/dcg.exe" "dcg.exe"
 assert_win_pe "$WINHOME/.local/bin/cass.exe" "cass.exe"
 assert_win_pe "$WINHOME/.local/bin/br.exe" "br.exe"

@@ -9,7 +9,10 @@ pass() { echo -e "  ${G}OK${N} $1"; PASS=$((PASS+1)); }
 fail() { echo -e "  ${R}FAIL${N} $1"; FAIL=$((FAIL+1)); }
 skip() { echo -e "  ${Y}SKIP${N} $1"; SKIP=$((SKIP+1)); }
 
-WINHOME="C:/Users/$WINUSER"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/_windows-home.sh"
+
+WINHOME="$(_require_windows_home "$WINUSER")"
 CLAUDE="$WINHOME/.claude"
 AGY="$WINHOME/.gemini/antigravity-cli"
 

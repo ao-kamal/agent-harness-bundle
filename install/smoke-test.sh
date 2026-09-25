@@ -32,6 +32,13 @@
 # fallback covers the rare case where it isn't.
 WINUSER="${USERNAME:-$(powershell.exe -NoProfile -Command 'Write-Host -NoNewline $env:USERNAME' 2>/dev/null | tr -d '\r')}"
 
+# Resolve the Windows home in whichever bash this actually is. `bash` on Windows may be the
+# WSL launcher rather than Git Bash, and C:/Users/<name> is not a path there, which would fail
+# every Windows file assertion below while looking like a broken install.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/_windows-home.sh"
+WINHOME="$(_require_windows_home "$WINUSER")"
+
 # Tools that may legitimately be missing on a fresh friend install: optional pieces (fmd), or
 # WSL installs that silently fall back / fail when a prerequisite isn't present (caam's WSL
 # install needs cosign; slb and sysmoni may not be part of every bundle), or extra AI-CLI
@@ -164,8 +171,8 @@ assert_win_file() {
   test -f "$path" && pass "Win: $name on disk" || fail "Win: $name on disk" "not found at $path"
 }
 
-WINHOME_BIN="C:/Users/$WINUSER/.local/bin"
-WINHOME_SHIMS="C:/Users/$WINUSER/scoop/shims"
+WINHOME_BIN="$WINHOME/.local/bin"
+WINHOME_SHIMS="$WINHOME/scoop/shims"
 
 for b in claude.exe cass.exe br.exe; do
   assert_win_file "$WINHOME_BIN/$b" "$b"

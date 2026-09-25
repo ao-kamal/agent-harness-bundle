@@ -17,21 +17,20 @@ fail() { echo -e "  ${R}FAIL${N} $1${2:+: ${D}$2${N}}"; FAILED_TESTS+=("$1"); FA
 skip() { echo -e "  ${Y}SKIP${N} $1 ${D}($2)${N}"; SKIP=$((SKIP+1)); }
 hdr()  { echo; echo -e "${B}=== $1 ===${N}"; }
 
-# Resolve the Windows home in whichever bash this actually is. `bash` on Windows
-# may be Git Bash (C:/... works) or the WSL launcher (only /mnt/c/... works), and
-# a hardcoded form silently fails every file test under the other one.
-if [ -d "/mnt/c/Users/$WINUSER/.claude" ]; then
-  WINHOME="/mnt/c/Users/$WINUSER"
-elif [ -d "C:/Users/$WINUSER/.claude" ]; then
-  WINHOME="C:/Users/$WINUSER"
-elif [ -d "$HOME/.claude" ]; then
-  WINHOME="$HOME"
-else
-  echo -e "${R}Cannot locate the Windows home for user '$WINUSER'.${N}" >&2
-  echo "Tried /mnt/c/Users/$WINUSER, C:/Users/$WINUSER, and \$HOME." >&2
-  exit 2
-fi
-if [ -n "$WSL_DISTRO_NAME" ] || [ -n "$WSLENV" ]; then BASH_FLAVOR="wsl"; else BASH_FLAVOR="git-bash"; fi
+# Resolve the Windows home in whichever bash this actually is, via the shared
+# helper the other smoke tests use. `bash` on Windows may be Git Bash, where
+# C:/Users/<name> is a valid path, or the WSL launcher, where only
+# /mnt/c/Users/<name> is; a hardcoded form fails every file test under the other.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/_windows-home.sh"
+WINHOME="$(_require_windows_home "$WINUSER")"
+# uname is the reliable discriminator: Git Bash reports MINGW/MSYS, WSL reports
+# Linux. WSLENV is not usable here because Git Bash inherits it from Windows.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) BASH_FLAVOR="git-bash" ;;
+  Linux) BASH_FLAVOR="wsl" ;;
+  *) BASH_FLAVOR="unknown" ;;
+esac
 
 CLAUDE_HOME="$WINHOME/.claude"
 OC_HOME="$WINHOME/.config/opencode"
