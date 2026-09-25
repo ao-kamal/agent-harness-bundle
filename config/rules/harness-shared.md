@@ -14,8 +14,9 @@ One brain. Any front end. Edit here, not in a per-CLI copy.
 | Procedural / session memory | `cm` / `cass` | any harness (CLI) |
 | Grok-only knobs | `~/.grok/config.toml` | Grok Build only |
 | Antigravity-only knobs | `~/.gemini/antigravity-cli/settings.json` | `agy` only. Skills/rules are junctions, not copies |
+| OpenCode-only knobs | `~/.config/opencode/opencode.jsonc` | OpenCode CLI. Skills/rules stay in `~/.claude` (official Claude Code fallback). Do not write `~/.config/opencode/AGENTS.md` or it replaces `CLAUDE.md`. |
 
-Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/`, `~/.agents/`, or `~/.gemini/`. Grok already scans `~/.claude/`. Antigravity gets junctions, not copies. A second tree means every edit has to be made twice.
+Do **not** copy rules, skills, or CLAUDE.md into `~/.grok/`, `~/.agents/`, `~/.gemini/`, or `~/.config/opencode/skills`. Grok already scans `~/.claude/`. OpenCode already scans `~/.claude/skills` and `~/.claude/CLAUDE.md`. Antigravity gets junctions, not copies. A second tree means every edit has to be made twice.
 
 Grok-native leftovers that stay Grok-only: `~/.grok/config.toml`, pager, auth, bundled skills. Claude-native leftovers that stay Claude-only: plugin marketplaces, TUI settings.
 
@@ -50,7 +51,7 @@ When saving a memory:
 
 ## Daily driver vs swarms
 
-- **Daily work:** Grok Build (`grok`).
+- **Daily work:** Grok Build (`grok`), or OpenCode CLI (`opencode`) when you want native Zen/free Muse Spark.
 - **Swarms:** ntm 1.29+ can `spawn --grok=N` and `--agy=N:<model-id>` with send/interrupt. Grok and Antigravity use their own CLIs and subscriptions. Do not put Antigravity behind CLIProxy. See `ntm-swarm.md`.
 
 ## Inspect

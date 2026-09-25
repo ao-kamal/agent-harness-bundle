@@ -7,7 +7,7 @@ The brain is shared. The CLI you sit in is a front end. Edit `~/.claude/` once; 
 ## What you get
 
 - **One shared brain** in `~/.claude/`: global `CLAUDE.md`, topic rules, ~110 skills, dcg + post-compact hooks, Claude auto-memory.
-- **Front ends that consume it**: Claude Code natively; Grok Build via `compat.claude`; Antigravity CLI (`agy`) via junctions onto `~/.claude` (not a second copy).
+- **Front ends that consume it**: Claude Code natively; Grok Build via `compat.claude`; Antigravity CLI (`agy`) via junctions onto `~/.claude` (not a second copy); OpenCode CLI natively (skills from `~/.claude/skills`, `CLAUDE.md` plus an `instructions` glob for the rules).
 - **The flywheel CLI stack** (Jeffrey Emanuel's ecosystem): session search (cass), procedural memory (cm), bead task graphs (br + bv), multi-agent tmux orchestration (ntm), agent coordination (Agent Mail), account switching (caam), command guards (dcg + slb), and more.
 - **A Windows + WSL hybrid architecture** that actually works: shared credentials, hot/cold filesystem discipline, self-healing symlinks, boot-time daemons.
 - **Native swarm panes:** Grok (`ntm spawn --grok=N`), Antigravity (`--agy=N:<model-id>`, never CLIProxy), Kimi (`--cc=N:kimi-for-coding`). WSL shims exec the Windows `grok.exe` / `agy.exe`. Claude Code `--cc=N:grok-4.6` via CLIProxyAPI is Grok fallback only.
@@ -38,15 +38,24 @@ powershell -ExecutionPolicy Bypass -File install\install-antigravity.ps1
 
 That only junctions `~/.gemini/antigravity-cli/skills` and `rules` onto `~/.claude`. ntm already has `--agy`.
 
-Follow **[SETUP.md](SETUP.md)**. Grok: **[flavors/grok/SETUP.md](flavors/grok/SETUP.md)**. Antigravity: **[flavors/antigravity/SETUP.md](flavors/antigravity/SETUP.md)**.
+If the daily driver is OpenCode CLI (`opencode`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install\install-opencode.ps1
+```
+
+Also a **thin adapter**. It writes `~/.config/opencode/opencode.jsonc` (rules `instructions` glob, model, skill permission) and a token-only Agent Mail bearer file that the config references, so the secret never lands in the config. It copies no skills or rules: OpenCode reads `~/.claude` directly. If no Agent Mail bearer is present it writes that MCP entry **disabled** rather than omitting it, so the missing coordination layer is visible. `bash install/smoke-test-opencode.sh` verifies the wiring.
+
+Follow **[SETUP.md](SETUP.md)**. Grok: **[flavors/grok/SETUP.md](flavors/grok/SETUP.md)**. Antigravity: **[flavors/antigravity/SETUP.md](flavors/antigravity/SETUP.md)**. OpenCode: **[flavors/opencode/SETUP.md](flavors/opencode/SETUP.md)**.
 
 ## Repo layout
 
 | Path | What |
 |------|------|
-| `install/` | `install.ps1` (shared brain + flywheel), `install-grok.ps1`, `install-antigravity.ps1`, WSL stage, smoke tests, uninstall |
+| `install/` | `install.ps1` (shared brain + flywheel), `install-grok.ps1`, `install-antigravity.ps1`, `install-opencode.ps1`, WSL stage, smoke tests, uninstall |
 | `config/` | Shared templates: CLAUDE.md, rules (including `harness-shared.md`), hooks, WSL, Kimi/Grok-sub `cc-router` |
 | `config/grok/` | Thin Grok-only adapters (memory/compat fragment + compact hook JSON). Not a second brain. |
+| `config/opencode/` | `opencode.jsonc.fragment` merged by the OpenCode adapter. Not a second brain. |
 | `skills/` | Skills payload → `~/.claude/skills` only |
 | `docs/field-guide/` | Assimilation layer — chapter 01 first; chapter 06 is the Grok front-end map |
 | `docs/methodology/` | Deeper methodology documents |
@@ -56,7 +65,7 @@ Follow **[SETUP.md](SETUP.md)**. Grok: **[flavors/grok/SETUP.md](flavors/grok/SE
 ## After installing
 
 1. Open a **new** terminal (PATH changed).
-2. Confirm the smoke test is green (`bash install/smoke-test.sh`). Grok users also run `bash install/smoke-test-grok.sh` and `grok inspect`.
+2. Confirm the smoke test is green (`bash install/smoke-test.sh`). Grok users also run `bash install/smoke-test-grok.sh` and `grok inspect`; OpenCode users run `bash install/smoke-test-opencode.sh`.
 3. Read `docs/field-guide/01-philosophy.md`.
 4. Start your first real project with the `/flywheel-planning` skill.
 
@@ -66,6 +75,7 @@ Follow **[SETUP.md](SETUP.md)**. Grok: **[flavors/grok/SETUP.md](flavors/grok/SE
 git pull
 powershell -ExecutionPolicy Bypass -File install\install.ps1 -Update
 powershell -ExecutionPolicy Bypass -File install\install-grok.ps1 -Update
+powershell -ExecutionPolicy Bypass -File install\install-opencode.ps1 -Update
 ```
 
-`-Update` re-deploys the shared brain (and the thin Grok adapter) and leaves completed installs alone. Details in [docs/maintenance.md](docs/maintenance.md).
+`-Update` re-deploys the shared brain (and the thin front-end adapters) and leaves completed installs alone. Details in [docs/maintenance.md](docs/maintenance.md).

@@ -1,0 +1,35 @@
+{
+  // OpenCode fragment merged by install\install-opencode.ps1.
+  // Thin adapter: OpenCode reads skills from ~/.claude/skills and CLAUDE.md
+  // natively. Nothing here copies the brain.
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/muse-spark-1.3-contributor-free",
+  "autoupdate": true,
+  "instructions": [
+    "{{CLAUDE_HOME_FWD}}/rules/*.md"
+  ],
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
+  },
+  "mcp": {
+    // Agent Mail is the only MCP this bundle provisions. The installer writes
+    // its bearer as a {file:} reference to a token-only file, so the secret
+    // never lands in this config. If no bearer is available the installer
+    // writes the entry disabled rather than omitting it, so a missing
+    // coordination layer is visible instead of silent.
+    //
+    // Deliberately NOT provisioned fleet-wide:
+    //   - Playwright MCP and mcp-youtube MCP: both timed out on every connect
+    //     in measured use (~30s each) and added startup delay to every session.
+    //   - Apify: unauthenticated, fails on connect. Kept disabled so enabling
+    //     it on a machine that wants it stays a one-line change.
+    // Add any of them deliberately per machine rather than shipping them here.
+    "apify": {
+      "type": "remote",
+      "url": "https://mcp.apify.com",
+      "enabled": false
+    }
+  }
+}

@@ -4,7 +4,7 @@ This bundle isn't a one-time install. Three separate things get updated over its
 
 | What | How | How often |
 |---|---|---|
-| The bundle (config, field guide, installer) | `git pull` + re-run `install.ps1` (and `install-grok.ps1` if you sit in Grok) | Whenever Kamal pushes something and you feel like catching up |
+| The bundle (config, field guide, installer) | `git pull` + re-run `install.ps1` (and the adapter for the front end you sit in) | Whenever Kamal pushes something and you feel like catching up |
 | The CLI tools (cass, ntm, br, bv, caam, dcg, ...) | `docs/methodology/tooling-update-runbook-generic.md` | Every few weeks, or when something feels stale |
 | Skills library | Default: bundle re-copy (above). Optional: `jsm` with a paid subscription | Same as the bundle, unless you subscribe |
 
@@ -18,9 +18,10 @@ git pull
 powershell -ExecutionPolicy Bypass -File install\install.ps1 -Update
 powershell -ExecutionPolicy Bypass -File install\install-grok.ps1 -Update
 powershell -ExecutionPolicy Bypass -File install\install-hermes.ps1 -Update   # if you sit in Hermes
+powershell -ExecutionPolicy Bypass -File install\install-opencode.ps1 -Update # if you sit in OpenCode
 ```
 
-The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies the skills payload and re-renders the **shared** `~/.claude` templates. `install-grok.ps1 -Update` only refreshes the thin Grok adapter (memory junction, compat pin, compact hook). `install-hermes.ps1 -Update` re-applies its config keys and refreshes the SOUL.md rules block in place. State files: `%USERPROFILE%\.harness-bundle-state.json`, `%USERPROFILE%\.harness-bundle-grok-state.json`, and `%USERPROFILE%\.harness-bundle-hermes-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
+The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies the skills payload and re-renders the **shared** `~/.claude` templates. `install-grok.ps1 -Update` only refreshes the thin Grok adapter (memory junction, compat pin, compact hook). `install-hermes.ps1 -Update` re-applies its config keys and refreshes the SOUL.md rules block in place. `install-opencode.ps1 -Update` re-merges `opencode.jsonc`, which means it also re-establishes the user-only ACL on the Agent Mail bearer file. State files: `%USERPROFILE%\.harness-bundle-state.json`, `%USERPROFILE%\.harness-bundle-grok-state.json`, `%USERPROFILE%\.harness-bundle-hermes-state.json`, and `%USERPROFILE%\.harness-bundle-opencode-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
 
 ## Re-run the smoke test after ANY infrastructure change
 
