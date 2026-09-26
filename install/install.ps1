@@ -484,20 +484,58 @@ if ($OpenCodeOnly) {
 } elseif (-not (Test-StageDone $state 'plugins')) {
     Write-Info "Stage 3b: plugins + canonical skill installs"
     Update-SessionPath
-    claude plugin marketplace add anthropics/claude-code 2>$null
-    claude plugin marketplace add anthropics/skills 2>$null
-    claude plugin marketplace add anthropics/claude-plugins-official 2>$null
-    claude plugin install frontend-design@claude-code-plugins 2>$null
-    claude plugin install document-skills@anthropic-agent-skills 2>$null
-    claude plugin install vercel@claude-plugins-official 2>$null
 
-    Write-Info "impeccable skill family via npx (canonical)"
-    npx --yes impeccable skills install -y --providers=claude 2>$null
+    # See the note below: $ErrorActionPreference is 'Stop' script-wide, so every
+    # third-party call in this stage is wrapped and judged by exit code. A
+    # marketplace that 404s or a plugin that fails to build must not take the
+    # mandatory config-deploy stage down with it.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+
+    foreach ($mkt in @('anthropics/claude-code', 'anthropics/skills', 'anthropics/claude-plugins-official')) {
+        claude plugin marketplace add $mkt 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "marketplace add failed: $mkt (continuing)" }
+    }
+    foreach ($pl in @('frontend-design@claude-code-plugins',
+                      'document-skills@anthropic-agent-skills',
+                      'vercel@claude-plugins-official')) {
+        claude plugin install $pl 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "plugin install failed: $pl (continuing)" }
+    }
+
+    # Optional third-party skill sources must never be able to abort the install.
+    #
+    # $ErrorActionPreference is 'Stop' for the whole script, and under it a
+    # native command that writes to stderr and exits non-zero raises a
+    # terminating NativeCommandError. So a single flaky upstream download took
+    # the run down at exit 1 and the mandatory config-deploy stage after it never
+    # executed -- an optional nicety blocking required work. That has now bitten
+    # twice (Stage 9 previously, this one), so it is handled structurally: drop
+    # to Continue around these calls and judge them by exit code.
+    Write-Info "impeccable skill family via npx (optional)"
+    # $ErrorActionPreference is already 'Continue' for this whole stage (see the
+    # note at the top of it) and $prevEAP was captured once, before it was
+    # lowered. Re-capturing it here would record 'Continue' and restore that
+    # instead of 'Stop', quietly disarming every later stage.
+    npx --yes impeccable skills install -y --providers=claude 2>&1 |
+        Select-Object -Last 3 | ForEach-Object { Write-Host "    $_" }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn2 "impeccable skill install failed (exit $LASTEXITCODE) - continuing."
+        Write-Warn2 "This is an optional upstream skill family, not a prerequisite. Re-run later with:"
+        Write-Warn2 "  npx --yes impeccable skills install -y --providers=claude"
+        Write-Warn2 "Upstream tracker: https://github.com/pbakaus/impeccable/issues"
+    }
 
     $exSkill = Join-Path $env:USERPROFILE '.claude\skills\excalidraw-diagram'
     if (-not (Test-Path $exSkill)) {
-        git clone --depth 1 https://github.com/coleam00/excalidraw-diagram-skill.git $exSkill
+        git clone --depth 1 https://github.com/coleam00/excalidraw-diagram-skill.git $exSkill 2>&1 |
+            Select-Object -Last 2 | ForEach-Object { Write-Host "    $_" }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "excalidraw-diagram skill clone failed (exit $LASTEXITCODE) - continuing."
+            Remove-Item $exSkill -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
+    $ErrorActionPreference = $prevEAP
     Complete-Stage $state 'plugins'
 }
 

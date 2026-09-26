@@ -95,15 +95,25 @@ def scalar_is_empty(value: str) -> bool:
 
 
 def check_required_and_known(fm: str):
-    """Return (hard_defects, soft_notes) from a library-free parse."""
+    """Return (hard_defects, soft_notes) from a library-free parse.
+
+    Severity follows what the harnesses actually do. Frontmatter that does not
+    parse makes the skill vanish with no user-visible error -- that is a hard
+    defect. Frontmatter that parses but leaves a required field empty still
+    loads; the skill is merely listed with no description, which is degraded
+    rather than dropped, so it is a note. A missing `name` is the exception:
+    the skill cannot be addressed at all, so that stays hard.
+    """
     fields = structural_fields(fm)
-    hard = []
-    for key in REQUIRED:
-        if key not in fields:
-            hard.append(f"missing required frontmatter field: {key}")
-        elif scalar_is_empty(fields[key]):
-            hard.append(f"required frontmatter field `{key}` is present but empty")
-    notes = []
+    hard, notes = [], []
+    if "name" not in fields or scalar_is_empty(fields.get("name", "")):
+        hard.append("missing or empty required frontmatter field: name "
+                    "(the skill cannot be addressed without it)")
+    if "description" not in fields:
+        notes.append("no `description` field: the skill loads but is listed with no description")
+    elif scalar_is_empty(fields["description"]):
+        notes.append("`description` is present but empty: the skill loads but is listed "
+                     "with no description")
     extra = sorted(set(fields) - RECOGNISED)
     if extra:
         notes.append("unrecognised frontmatter field(s): " + ", ".join(extra))
