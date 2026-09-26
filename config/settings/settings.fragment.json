@@ -26,9 +26,31 @@
     ]
   },
   "tui": "fullscreen",
-  "env": {
-    "DCG_HOOK_TIMEOUT_MS": "2000"
+  "modelPicker": {
+    "options": [
+      {
+        "model": "space-bunny-free",
+        "label": "Space Bunny (free)",
+        "description": "OpenCode Zen free stealth model, routed through the gateway",
+        "behavesAs": "claude-opus-4-8"
+      }
+    ]
   },
-  "_hbFragmentVersion": 1,
-  "overrideKeys": []
+  "env": {
+    "DCG_HOOK_TIMEOUT_MS": "2000",
+    "ANTHROPIC_BASE_URL": "https://opencode.ai/zen",
+    "ANTHROPIC_AUTH_TOKEN": "zen-placeholder-bearer-ignored-by-gateway",
+    "ANTHROPIC_MODEL": "space-bunny-free",
+    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "_hbFragmentVersion": 2,
+  "overrideKeys": [
+    "env.ANTHROPIC_BASE_URL",
+    "env.ANTHROPIC_AUTH_TOKEN",
+    "env.ANTHROPIC_MODEL",
+    "env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+    "env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    "modelPicker"
+  ]
 }

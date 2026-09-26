@@ -253,8 +253,33 @@ assert_eq "$LN_PROJECTS" "/mnt/c/Users/$WINUSER/.claude/projects" "Projects syml
 LN_CAAM=$(wsl_run 'readlink /root/.local/share/caam 2>&1')
 assert_eq "$LN_CAAM" "/mnt/c/Users/$WINUSER/.local/share/caam" "Caam vault symlink → Windows path"
 
-LN_CREDS=$(wsl_run 'readlink /root/.claude/.credentials.json 2>&1')
-assert_eq "$LN_CREDS" "/mnt/c/Users/$WINUSER/.claude/.credentials.json" "Credentials symlink → Windows file"
+# ---- Auth profile detection -------------------------------------------------
+# Two mutually exclusive shapes are supported:
+#
+#   claude-login  a browser login wrote ~/.claude/.credentials.json, and
+#                 .claude.json carries an oauthAccount identity
+#   gateway       settings.json carries ANTHROPIC_BASE_URL, there is no
+#                 credentials file and no OAuth identity, because a gateway
+#                 never writes either one
+#
+# Asserting OAuth identity on a gateway install fails even when Claude Code is
+# working perfectly, so every credential assertion below branches on this.
+AUTH_MODE=claude-login
+GW_BASE=""
+if [ -f "$WINHOME/.claude/settings.json" ] && grep -q 'ANTHROPIC_BASE_URL' "$WINHOME/.claude/settings.json" 2>/dev/null; then
+  AUTH_MODE=gateway
+  GW_BASE=$(sed -n 's/.*"ANTHROPIC_BASE_URL"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+            "$WINHOME/.claude/settings.json" | head -1)
+fi
+echo -e "  ${D}auth profile: ${AUTH_MODE}${GW_BASE:+ ($GW_BASE)}${N}"
+
+if [ "$AUTH_MODE" = "claude-login" ]; then
+  LN_CREDS=$(wsl_run 'readlink /root/.claude/.credentials.json 2>&1')
+  assert_eq "$LN_CREDS" "/mnt/c/Users/$WINUSER/.claude/.credentials.json" "Credentials symlink → Windows file"
+else
+  skip "Credentials symlink → Windows file" "gateway auth: no .credentials.json exists by design"
+  assert_nonempty "$GW_BASE" "Gateway: settings.json declares ANTHROPIC_BASE_URL"
+fi
 
 # Cross-write test
 CROSS_TEST=$(wsl_run 'F=/root/.claude/projects/.smoke-test-marker
@@ -264,17 +289,84 @@ CROSS_TEST=$(wsl_run 'F=/root/.claude/projects/.smoke-test-marker
 assert_contains "$CROSS_TEST" "cross-write-" "Cross-write through symlink: WSL writes, Windows path reads"
 
 # =============================================================================
-hdr "PHASE 3 — Auth sharing (one OAuth = both OSes)"
+hdr "PHASE 3 — Auth sharing (one credential = both OSes)"
 # =============================================================================
 
 WSL_PRINT_OK=$(wsl_run 'echo "Reply with only OK and nothing else" | claude --print 2>&1 | head -3')
 assert_contains "$WSL_PRINT_OK" "OK" "WSL claude --print returns response (auth works)"
-WIN_EMAIL=$(wsl_run 'python3 -c "import json; d=json.load(open(\"/mnt/c/Users/'"$WINUSER"'/.claude.json\")); print(d.get(\"oauthAccount\",{}).get(\"emailAddress\",\"\"))"')
-WSL_CACHED_EMAIL=$(wsl_run 'python3 -c "import json; d=json.load(open(\"/root/.claude.json\")); print(d.get(\"oauthAccount\",{}).get(\"emailAddress\",\"\"))"')
 
-assert_nonempty "$WIN_EMAIL" "Windows .claude.json has oauthAccount email"
-assert_eq "$WSL_CACHED_EMAIL" "$WIN_EMAIL" "WSL .claude.json identity matches Windows"
-assert_contains "$WSL_CACHED_EMAIL" "@" "WSL .claude.json identity is an email"
+# Windows-side round trip: the profile that actually serves requests.
+WIN_PRINT=$(ps_run "claude -p 'Reply with only OK and nothing else' 2>&1" | tr -d '\r')
+assert_contains "$WIN_PRINT" "OK" "Windows claude -p returns response (auth works)"
+
+if [ "$AUTH_MODE" = "claude-login" ]; then
+  WIN_EMAIL=$(wsl_run 'python3 -c "import json; d=json.load(open(\"/mnt/c/Users/'"$WINUSER"'/.claude.json\")); print(d.get(\"oauthAccount\",{}).get(\"emailAddress\",\"\"))"')
+  WSL_CACHED_EMAIL=$(wsl_run 'python3 -c "import json; d=json.load(open(\"/root/.claude.json\")); print(d.get(\"oauthAccount\",{}).get(\"emailAddress\",\"\"))"')
+
+  assert_nonempty "$WIN_EMAIL" "Windows .claude.json has oauthAccount email"
+  assert_eq "$WSL_CACHED_EMAIL" "$WIN_EMAIL" "WSL .claude.json identity matches Windows"
+  assert_contains "$WSL_CACHED_EMAIL" "@" "WSL .claude.json identity is an email"
+else
+  # No OAuth identity exists to compare, and requiring one is the bug this
+  # branch exists to avoid. What matters is that the declared gateway is the one
+  # requests actually reach, and that no stray Anthropic credential has leaked
+  # into a profile the gateway would reject.
+  GW_MODEL=$(sed -n 's/.*"ANTHROPIC_MODEL"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+             "$WINHOME/.claude/settings.json" | head -1)
+  assert_nonempty "$GW_MODEL" "Gateway: settings.json declares ANTHROPIC_MODEL"
+
+  # The base URL must NOT end in /v1: Claude Code appends /v1/messages itself,
+  # and a base that already carries it produces .../v1/v1/messages, which the
+  # gateway answers with a 404 HTML page that surfaces as a bogus model error.
+  case "$GW_BASE" in
+    */v1) fail "Gateway: ANTHROPIC_BASE_URL must not end in /v1" ;;
+    *)    pass "Gateway: ANTHROPIC_BASE_URL has no trailing /v1 (Claude Code appends it)" ;;
+  esac
+
+  # A gateway that needs no key must not be handed one it will reject: Zen
+  # validates x-api-key and ignores Authorization, so ANTHROPIC_API_KEY must be
+  # absent while ANTHROPIC_AUTH_TOKEN is the supported carrier.
+  if grep -q '"ANTHROPIC_API_KEY"' "$WINHOME/.claude/settings.json" 2>/dev/null; then
+    fail "Gateway: ANTHROPIC_API_KEY absent (Zen rejects x-api-key; use ANTHROPIC_AUTH_TOKEN)"
+  else
+    pass "Gateway: ANTHROPIC_API_KEY absent (correct carrier is ANTHROPIC_AUTH_TOKEN)"
+  fi
+
+  # A model outside Claude Code's catalog needs a behavesAs mapping, or every
+  # invocation prints [claude-code:unrecognized_model] to stderr and any harness
+  # that captures stderr sees a spurious error.
+  if [ -n "$GW_MODEL" ]; then
+    if grep -q '"behavesAs"' "$WINHOME/.claude/settings.json" 2>/dev/null; then
+      pass "Gateway: modelPicker carries behavesAs (no unrecognized_model noise)"
+    else
+      skip "Gateway: modelPicker carries behavesAs" "no behavesAs in settings.json"
+    fi
+  fi
+fi
+
+# =============================================================================
+hdr "PHASE 3b — Skill frontmatter parses (a bad skill vanishes silently)"
+# =============================================================================
+# A SKILL.md whose frontmatter does not parse is dropped by both harnesses with
+# no user-visible error, so the skill just stops existing for the agent. One
+# real instance was an unquoted description containing 'Triggers: "..."'.
+SKILL_VALIDATOR="$SCRIPT_DIR/validate-skills.py"
+SKILL_PY=""
+for cand in python python3 py; do
+  if command -v "$cand" >/dev/null 2>&1; then SKILL_PY="$cand"; break; fi
+done
+if [ -f "$SKILL_VALIDATOR" ] && [ -n "$SKILL_PY" ]; then
+  SKILL_OUT=$("$SKILL_PY" "$SKILL_VALIDATOR" --quiet 2>&1)
+  SKILL_RC=$?
+  if [ $SKILL_RC -eq 0 ]; then
+    pass "All SKILL.md frontmatter parses ($(echo "$SKILL_OUT" | grep -oE 'OK: [0-9]+ skills' | head -1))"
+  else
+    fail "SKILL.md frontmatter defects" "$(echo "$SKILL_OUT" | grep -c '    - ') problem(s); run install/validate-skills.py for detail"
+    echo "$SKILL_OUT" | sed 's/^/        /'
+  fi
+else
+  skip "SKILL.md frontmatter parses" "validate-skills.py or a Python interpreter not available"
+fi
 
 # =============================================================================
 hdr "PHASE 4 — Caam shared vault"
@@ -416,8 +508,14 @@ assert_contains "$TYPE_NPM" "npm is a function" "hot-data-enforce wrapper active
 
 # (c) Credentials symlink watcher running. Started three ways (bashrc, profile, boot hook) —
 # any one of the three keeps it alive; just confirm at least one instance is up.
-CREDS_WATCHER=$(wsl_run 'pgrep -af claude-creds-symlink-watcher 2>&1')
-assert_contains "$CREDS_WATCHER" "claude-creds-symlink-watcher" "Credentials symlink watcher running (pgrep)"
+# Under gateway auth there are no credentials to watch, so the watcher is inert by
+# design and running is not a requirement.
+if [ "$AUTH_MODE" = "claude-login" ]; then
+  CREDS_WATCHER=$(wsl_run 'pgrep -af claude-creds-symlink-watcher 2>&1')
+  assert_contains "$CREDS_WATCHER" "claude-creds-symlink-watcher" "Credentials symlink watcher running (pgrep)"
+else
+  skip "Credentials symlink watcher running (pgrep)" "gateway auth: no credentials file to watch"
+fi
 
 # =============================================================================
 hdr "PHASE 7 — ntm spawn end-to-end (1 agent)"

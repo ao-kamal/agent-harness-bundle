@@ -18,7 +18,7 @@ param(
     [switch]$SkipVault,
     [switch]$Quiet,
     [switch]$Update,   # after git pull: re-deploys skills/config (Win + WSL) without redoing installs
-    [switch]$OpenCodeOnly # provision shared brain + WSL substrate, but leave Claude login/plugins/secrets/MCP/full smoke pending
+    [switch]$OpenCodeOnly # provision shared brain + WSL substrate, but leave Claude auth/plugins/secrets/MCP/full smoke pending
 )
 
 if ($Help) {
@@ -31,7 +31,12 @@ if ($Help) {
     Write-Host "  -SkipVault Skip Stage 10 (Obsidian vault starter)"
     Write-Host "  -Quiet     Suppress informational output (warnings/errors still print)"
     Write-Host "  -Update    Re-deploy config + skills (Win and WSL) and re-run the smoke test;"
-    Write-Host "  -OpenCodeOnly  Skip Claude login/plugins, secrets, Claude MCP registration, and the Claude-dependent smoke test; still provisions WSL and shared skills"
+    Write-Host "  -OpenCodeOnly  Skip Claude auth/plugins, secrets, Claude MCP registration, and the Claude-dependent smoke test; still provisions WSL and shared skills"
+    Write-Host ""
+    Write-Host "  Claude auth is profile-driven, not login-driven. If settings.json carries"
+    Write-Host "  ANTHROPIC_BASE_URL the installer verifies the gateway by asking the model to"
+    Write-Host "  answer, and never prompts for a browser login. Otherwise it keeps the"
+    Write-Host "  original behaviour and waits for ~/.claude/.credentials.json."
     Write-Host "             does not redo package installs. Run after 'git pull'."
     exit 0
 }
@@ -412,11 +417,12 @@ if (-not (Test-StageDone $state 'cli-tools')) {
     }
 }
 
-# =================== Stage 3a: Claude Code + login (MANUAL GATE) ===================
+# =================== Stage 3a: Claude Code + auth (MANUAL GATE) ===================
 if ($OpenCodeOnly) {
-    Write-Warn2 "Stage 3a skipped (-OpenCodeOnly): Claude Code login remains pending"
+    Write-Warn2 "Stage 3a skipped (-OpenCodeOnly): Claude Code auth remains pending"
 } elseif (-not (Test-StageDone $state 'claude-login')) {
-    Write-Info "Stage 3a: Claude Code + login"
+    Write-Info "Stage 3a: Claude Code + auth"
+    Update-SessionPath
     if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
         Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
         Update-SessionPath
@@ -425,15 +431,50 @@ if ($OpenCodeOnly) {
             exit 1
         }
     }
-    $creds = Join-Path $env:USERPROFILE '.claude\.credentials.json'
-    if (-not (Test-Path $creds)) {
-        Write-Host ""
-        Write-Host "MANUAL STEP: open a NEW terminal, run:  claude" -ForegroundColor Yellow
-        Write-Host "Complete the browser login, then exit Claude Code and press Enter here." -ForegroundColor Yellow
-        Read-Host "Press Enter once login is complete"
-        if (-not (Test-Path $creds)) { Write-Err2 "Still no credentials file - login did not complete. Re-run the installer."; exit 1 }
+
+    # Two auth shapes are supported, and they are mutually exclusive:
+    #
+    #   claude.ai / Console -> a browser login writes ~/.claude/.credentials.json
+    #   gateway routing     -> settings.json carries ANTHROPIC_BASE_URL plus a
+    #                          credential variable, and no credentials file exists
+    #
+    # This stage used to probe for the credentials file FIRST and prompt for a
+    # browser login when it was absent. That deadlocked every gateway install:
+    # it demanded a login that could never complete, because a gateway never
+    # writes that file. Detect the profile first, then verify the thing that
+    # actually matters -- that the model answers.
+    $authMode = 'claude-login'
+    $gwBase = $null
+    $claudeSettings = Join-Path $env:USERPROFILE '.claude\settings.json'
+    if (Test-Path $claudeSettings) {
+        try {
+            $sj = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+            if ($sj.env -and $sj.env.ANTHROPIC_BASE_URL) {
+                $authMode = 'gateway'
+                $gwBase = $sj.env.ANTHROPIC_BASE_URL
+            }
+        } catch { }
     }
-    Write-Ok "Claude Code authenticated"
+
+    if ($authMode -eq 'gateway') {
+        Write-Info "auth profile: gateway ($gwBase)"
+        $probe = (& claude -p 'Reply with exactly: PONG' 2>&1 | Out-String)
+        if ($probe -notmatch 'PONG') {
+            Write-Err2 "gateway routing is configured but claude did not answer. Check ANTHROPIC_BASE_URL / ANTHROPIC_MODEL in $claudeSettings, then re-run."
+            exit 1
+        }
+        Write-Ok "Claude Code answering through the gateway (no credentials file required)"
+    } else {
+        $creds = Join-Path $env:USERPROFILE '.claude\.credentials.json'
+        if (-not (Test-Path $creds)) {
+            Write-Host ""
+            Write-Host "MANUAL STEP: open a NEW terminal, run:  claude" -ForegroundColor Yellow
+            Write-Host "Complete the browser login, then exit Claude Code and press Enter here." -ForegroundColor Yellow
+            Read-Host "Press Enter once login is complete"
+            if (-not (Test-Path $creds)) { Write-Err2 "Still no credentials file - login did not complete. Re-run the installer."; exit 1 }
+        }
+        Write-Ok "Claude Code authenticated"
+    }
     Complete-Stage $state 'claude-login'
 }
 

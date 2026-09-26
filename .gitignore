@@ -16,3 +16,17 @@ install/wsl-setup.env
 # OS/editor junk
 Thumbs.db
 .DS_Store
+
+# Harness-local artifacts. Running Claude Code (or any harness) with the cwd
+# inside this repo makes it drop a per-project .claude/settings.local.json here.
+# That is machine-local state, not bundle content, and must never be committed.
+# Note this is the BUNDLE repo's own .claude/ — the canonical brain lives at
+# ~/.claude and is exported into config/ and skills/ by export-from-live.ps1.
+.claude/
+.opencode/
+
+# Compiled Python is interpreter-specific build output. One was tracked
+# (gdoc_to_md.cpython-313.pyc), which is dead weight on any other Python.
+__pycache__/
+*.pyc
+
