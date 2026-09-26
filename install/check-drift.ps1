@@ -33,12 +33,32 @@ foreach ($line in Get-Content $ManifestPath) {
     if ($line -match '^([a-f0-9]{64})\s+\*?(.+)$') { $entries[$Matches[2] -replace '\\','/'] = $Matches[1] }
 }
 
+# Map a bundle-relative manifest path to its path under live ~/.claude.
+#
+# The manifest is keyed by BUNDLE layout (config/rules/..., config/hooks/...,
+# skills/...), but the live tree has no config/ prefix: rules sit at
+# ~/.claude/rules and hooks at ~/.claude/hooks. Only skills/ is 1:1. Hashing
+# the manifest path verbatim under live therefore missed every rules and hooks
+# file, returned $null, and misreported all of them as "BUNDLE IS AHEAD" -- a
+# false alarm on every single run, which is worse than no drift check at all.
+function Get-LiveRelPath {
+    param($rel)
+    if ($rel -match '^config/(rules|hooks)/(.+)$') { return "$($Matches[1])/$($Matches[2])" }
+    return $rel
+}
+
+# Skills installed deliberately outside the bundle (e.g. by `npx impeccable`)
+# are untracked by design. Counting them as drift makes the check permanently
+# red, which is how a check stops being read. Trailing slash matches the form
+# used when the entry is built below.
+$IntentionallyUntracked = @('skills/impeccable/')
+
 $liveAhead = @()   # live differs from manifest -> bundle is stale
 $bundleAhead = @() # manifest file missing in live -> never deployed or deleted
 $inLiveOnly = @()  # in live skills but not tracked by the manifest
 
 foreach ($rel in $entries.Keys) {
-    $liveHash = Get-RelSha256 $ClaudeDir $rel
+    $liveHash = Get-RelSha256 $ClaudeDir (Get-LiveRelPath $rel)
     if ($null -eq $liveHash) { $bundleAhead += $rel }
     elseif ($liveHash -ne $entries[$rel]) { $liveAhead += $rel }
 }
@@ -46,6 +66,7 @@ foreach ($rel in $entries.Keys) {
 $liveSkills = Join-Path $ClaudeDir 'skills'
 if (Test-Path $liveSkills) {
     foreach ($dir in Get-ChildItem $liveSkills -Directory) {
+        if ($IntentionallyUntracked -contains "skills/$($dir.Name)/") { continue }
         $tracked = $entries.Keys | Where-Object { $_ -like "skills/$($dir.Name)/*" }
         if (-not $tracked) { $inLiveOnly += "skills/$($dir.Name)/" }
     }

@@ -1,6 +1,6 @@
 ---
 name: bootstrap-wsl-project
-description: Bootstrap a /mnt/c-located project to use ext4 native filesystem for hot-data dirs (SQLite, locks, build caches) via symlinks. Avoids WSL2 9p performance pathology — SQLite/fsync over 9p is 10-100× slower than native ext4. Use when setting up a new WSL2 + Windows hybrid project, when SQLite write-locks time out, when build performance is mysteriously slow, when `node_modules` / `target` / `.beads` need to be migrated, or when running `init-fast-data` against an existing project. Triggers: "wsl project setup", "bootstrap wsl project", "fast data symlink", "9p sqlite slow", "init-fast-data", "wsl performance fix".
+description: 'Bootstrap a /mnt/c-located project to use ext4 native filesystem for hot-data dirs (SQLite, locks, build caches) via symlinks. Avoids WSL2 9p performance pathology — SQLite/fsync over 9p is 10-100× slower than native ext4. Use when setting up a new WSL2 + Windows hybrid project, when SQLite write-locks time out, when build performance is mysteriously slow, when `node_modules` / `target` / `.beads` need to be migrated, or when running `init-fast-data` against an existing project. Triggers: "wsl project setup", "bootstrap wsl project", "fast data symlink", "9p sqlite slow", "init-fast-data", "wsl performance fix".'
 ---
 
 # Bootstrap WSL Project
