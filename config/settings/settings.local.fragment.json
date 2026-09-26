@@ -1,4 +1,14 @@
 {
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://opencode.ai/zen"
+  },
+  "overrideKeys": [
+    "env.ANTHROPIC_BASE_URL"
+  ],
+  "deleteKeys": [
+    "env.ANTHROPIC_API_KEY"
+  ],
+  "_hbFragmentVersion": 3,
   "permissions": {
     "allow": [
       "Read",

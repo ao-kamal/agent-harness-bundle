@@ -44,7 +44,7 @@
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   },
-  "_hbFragmentVersion": 2,
+  "_hbFragmentVersion": 3,
   "overrideKeys": [
     "env.ANTHROPIC_BASE_URL",
     "env.ANTHROPIC_AUTH_TOKEN",
@@ -52,5 +52,8 @@
     "env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
     "env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
     "modelPicker"
+  ],
+  "deleteKeys": [
+    "env.ANTHROPIC_API_KEY"
   ]
 }

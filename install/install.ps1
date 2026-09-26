@@ -31,13 +31,14 @@ if ($Help) {
     Write-Host "  -SkipVault Skip Stage 10 (Obsidian vault starter)"
     Write-Host "  -Quiet     Suppress informational output (warnings/errors still print)"
     Write-Host "  -Update    Re-deploy config + skills (Win and WSL) and re-run the smoke test;"
+    Write-Host "             does not redo package installs. Run after 'git pull'."
     Write-Host "  -OpenCodeOnly  Skip Claude auth/plugins, secrets, Claude MCP registration, and the Claude-dependent smoke test; still provisions WSL and shared skills"
     Write-Host ""
-    Write-Host "  Claude auth is profile-driven, not login-driven. If settings.json carries"
-    Write-Host "  ANTHROPIC_BASE_URL the installer verifies the gateway by asking the model to"
-    Write-Host "  answer, and never prompts for a browser login. Otherwise it keeps the"
+    Write-Host "  Claude auth is profile-driven, not login-driven. The settings fragments"
+    Write-Host "  are merged BEFORE the profile is detected, so if settings.json carries"
+    Write-Host "  ANTHROPIC_BASE_URL the installer verifies the gateway by asking the model"
+    Write-Host "  to answer, and never prompts for a browser login. Otherwise it keeps the"
     Write-Host "  original behaviour and waits for ~/.claude/.credentials.json."
-    Write-Host "             does not redo package installs. Run after 'git pull'."
     exit 0
 }
 
@@ -174,6 +175,103 @@ function Invoke-GitBash {
     if (-not $gitBash) { throw "Git Bash not found (checked Program Files, scoop, PATH). Install Git for Windows - see SETUP.md Step 1." }
     & $gitBash -lc ("bash '" + ($ScriptPath -replace '\\','/' -replace '^C:','/c') + "' " + $BashArgs)
     return $LASTEXITCODE
+}
+
+# Merge the settings fragments into the live settings files. Defined here, ahead of
+# Stage 3a, because the auth probe must judge the configuration this installer is
+# about to write -- not whatever was on disk beforehand.
+function Sync-SettingsFragments {
+    if (-not $script:PythonExe) {
+        Write-Warn2 "settings fragments NOT merged: no real Python interpreter resolved (settings left untouched)"
+        return
+    }
+    $mergePy = Join-Path $env:TEMP 'hb-merge-settings.py'
+    @'
+import json, os, shutil, sys
+frag_path, dst_path = sys.argv[1], sys.argv[2]
+win_user = sys.argv[3] if len(sys.argv) > 3 else ""
+with open(frag_path, encoding="utf-8") as fh:
+    frag_text = fh.read()
+# install.ps1 substitutes {{WIN_USER}} for the CLAUDE.md and rules payloads before
+# writing them. The settings fragments used to go straight into json.load, so every
+# hook command shipped a literal "C:\Users\{{WIN_USER}}\..." path: the dcg
+# PreToolUse guard, the compact SessionStart reminder, and both impeccable hooks
+# all pointed at a directory that does not exist and silently did nothing.
+# Substitute here too, and keep the placeholder set in step with the PS side.
+for token in ("{{WIN_USER}}", "{{USER_FULL_NAME}}"):
+    frag_text = frag_text.replace(token, win_user)
+frag = json.loads(frag_text)
+data = {}
+if os.path.exists(dst_path):
+    shutil.copy2(dst_path, dst_path + ".bak-harness-bundle")
+    with open(dst_path, encoding="utf-8") as fh:
+        data = json.load(fh)
+# Control metadata, not configuration. Merging these into the user's settings.json
+# shipped a top-level "overrideKeys" array into every live install, which is noise
+# the user never wrote and must keep in sync by hand.
+META = ("_hbFragmentVersion", "overrideKeys", "deleteKeys")
+def merge(a, b):
+    for k, v in b.items():
+        if k in META:
+            continue
+        if isinstance(v, dict) and isinstance(a.get(k), dict):
+            merge(a[k], v)
+        elif isinstance(v, list) and isinstance(a.get(k), list):
+            a[k] = a[k] + [x for x in v if x not in a[k]]
+        else:
+            a.setdefault(k, v)
+def resolve_path(root, keys, create):
+    cur = root
+    for k in keys[:-1]:
+        if not isinstance(cur.get(k), dict):
+            if not create:
+                return None
+            cur[k] = {}
+        cur = cur[k]
+    return cur
+def apply_overrides(a, b, overrides):
+    # fragment-wins for keys explicitly listed in overrideKeys (dot paths)
+    for path in overrides:
+        keys = path.split('.')
+        src = resolve_path(b, keys, create=False)
+        if src is None or keys[-1] not in src:
+            continue
+        dst = resolve_path(a, keys, create=True)   # an override is a claim about
+        dst[keys[-1]] = src[keys[-1]]               # the value, not the shape
+def apply_deletions(a, paths):
+    # A fragment can only ever set a key, never remove one, so a machine carrying
+    # credentials from a previous routing scheme keeps them forever. OpenCode Zen
+    # validates x-api-key and answers 401 to it (docs/field-guide/08), so a leftover
+    # ANTHROPIC_API_KEY silently breaks the gateway the fragment is trying to set up.
+    for path in paths:
+        keys = path.split('.')
+        parent = resolve_path(a, keys, create=False)
+        if parent is not None:
+            parent.pop(keys[-1], None)
+# Read the previously-applied version BEFORE merging. merge() runs first and
+# setdefault()s the fragment's own _hbFragmentVersion into data, so reading it
+# afterwards always yielded the new value, fragVer > stored was never true, and
+# apply_overrides below was unreachable. Every fragment-wins key in overrideKeys
+# -- env.ANTHROPIC_BASE_URL, modelPicker -- was therefore silently ignored on any
+# machine that already had a value, which is exactly the proxy-to-Zen migration
+# this mechanism exists to perform.
+stored = data.get('_hbFragmentVersion', 0)
+fragVer = frag.get('_hbFragmentVersion', 1)
+merge(data, frag)
+if fragVer > stored:
+    apply_overrides(data, frag, frag.get('overrideKeys', []))
+    apply_deletions(data, frag.get('deleteKeys', []))
+# Stamp unconditionally so a downgrade cannot make an old fragment re-apply forever.
+data['_hbFragmentVersion'] = fragVer
+data.pop('overrideKeys', None)
+data.pop('deleteKeys', None)
+with open(dst_path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, indent=2)
+print("merged", os.path.basename(dst_path))
+'@ | Out-File $mergePy -Encoding utf8
+    $claudeDir = Join-Path $env:USERPROFILE '.claude'
+    & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.fragment.json') (Join-Path $claudeDir 'settings.json') $script:WinUser
+    & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.local.fragment.json') (Join-Path $claudeDir 'settings.local.json') $script:WinUser
 }
 
 if ($Update) {
@@ -443,6 +541,16 @@ if ($OpenCodeOnly) {
     # it demanded a login that could never complete, because a gateway never
     # writes that file. Detect the profile first, then verify the thing that
     # actually matters -- that the model answers.
+    #
+    # The profile must be detected from the settings this installer is about to
+    # deploy, not from whatever happened to be on disk. Reading first created a
+    # chicken-and-egg deadlock on exactly the machine this profile exists to
+    # serve: a machine still carrying ANTHROPIC_BASE_URL=http://127.0.0.1:5210
+    # from a local filter proxy. The probe ran against the dead proxy, failed,
+    # and `exit 1` fired -- one stage BEFORE the config-deploy that would have
+    # rewritten that URL to opencode.ai/zen. The migration could never run on the
+    # machine that needed it. Deploy the fragments first, then judge.
+    Sync-SettingsFragments
     $authMode = 'claude-login'
     $gwBase = $null
     $claudeSettings = Join-Path $env:USERPROFILE '.claude\settings.json'
@@ -604,64 +712,9 @@ if (-not (Test-StageDone $state 'config-deploy')) {
     Copy-Item (Join-Path $script:BundleRoot 'config\hooks\*') (Join-Path $claudeDir 'hooks') -Force
     Copy-Item (Join-Path $script:BundleRoot 'config\agents\*') (Join-Path $claudeDir 'agents') -Force
 
-    # Merge settings fragments (backup + python JSON merge; never clobber)
-    $mergePy = Join-Path $env:TEMP 'hb-merge-settings.py'
-    @'
-import json, os, shutil, sys
-frag_path, dst_path = sys.argv[1], sys.argv[2]
-win_user = sys.argv[3] if len(sys.argv) > 3 else ""
-with open(frag_path, encoding="utf-8") as fh:
-    frag_text = fh.read()
-# install.ps1 substitutes {{WIN_USER}} for the CLAUDE.md and rules payloads before
-# writing them. The settings fragments used to go straight into json.load, so every
-# hook command shipped a literal "C:\Users\{{WIN_USER}}\..." path: the dcg
-# PreToolUse guard, the compact SessionStart reminder, and both impeccable hooks
-# all pointed at a directory that does not exist and silently did nothing.
-# Substitute here too, and keep the placeholder set in step with the PS side.
-for token in ("{{WIN_USER}}", "{{USER_FULL_NAME}}"):
-    frag_text = frag_text.replace(token, win_user)
-frag = json.loads(frag_text)
-data = {}
-if os.path.exists(dst_path):
-    shutil.copy2(dst_path, dst_path + ".bak-harness-bundle")
-    with open(dst_path, encoding="utf-8") as fh:
-        data = json.load(fh)
-def merge(a, b):
-    for k, v in b.items():
-        if isinstance(v, dict) and isinstance(a.get(k), dict):
-            merge(a[k], v)
-        elif isinstance(v, list) and isinstance(a.get(k), list):
-            a[k] = a[k] + [x for x in v if x not in a[k]]
-        else:
-            a.setdefault(k, v)
-def apply_overrides(a, b, overrides):
-    # fragment-wins for keys explicitly listed in overrideKeys (dot paths)
-    for path in overrides:
-        keys = path.split('.')
-        src, dst = b, a
-        ok = True
-        for k in keys[:-1]:
-            if not isinstance(src.get(k), dict) or not isinstance(dst.get(k), dict):
-                ok = False; break
-            src, dst = src[k], dst[k]
-        if ok and keys[-1] in src:
-            dst[keys[-1]] = src[keys[-1]]
-merge(data, frag)
-stored = data.get('_hbFragmentVersion', 0)
-fragVer = frag.get('_hbFragmentVersion', 1)
-if fragVer > stored:
-    apply_overrides(data, frag, frag.get('overrideKeys', []))
-    data['_hbFragmentVersion'] = fragVer
-with open(dst_path, "w", encoding="utf-8") as fh:
-    json.dump(data, fh, indent=2)
-print("merged", os.path.basename(dst_path))
-'@ | Out-File $mergePy -Encoding utf8
-    if ($script:PythonExe) {
-        & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.fragment.json') (Join-Path $claudeDir 'settings.json') $script:WinUser
-        & $script:PythonExe $mergePy (Join-Path $script:BundleRoot 'config\settings\settings.local.fragment.json') (Join-Path $claudeDir 'settings.local.json') $script:WinUser
-    } else {
-        Write-Warn2 "settings fragments NOT merged: no real Python interpreter resolved (settings.json left untouched)"
-    }
+    # Settings fragments are merged by Sync-SettingsFragments, which Stage 3a also
+    # calls so the auth probe judges the config this installer deploys.
+    Sync-SettingsFragments
 
     Copy-Item (Join-Path $script:BundleRoot 'config\windows\cass-watch-hidden.vbs') (Join-Path $env:USERPROFILE '.local\bin\cass-watch-hidden.vbs') -Force
     Complete-Stage $state 'config-deploy'
