@@ -311,9 +311,15 @@ else
   # branch exists to avoid. What matters is that the declared gateway is the one
   # requests actually reach, and that no stray Anthropic credential has leaked
   # into a profile the gateway would reject.
-  GW_MODEL=$(sed -n 's/.*"ANTHROPIC_MODEL"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+  GW_SONNET=$(sed -n 's/.*"ANTHROPIC_DEFAULT_SONNET_MODEL"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
              "$WINHOME/.claude/settings.json" | head -1)
-  assert_nonempty "$GW_MODEL" "Gateway: settings.json declares ANTHROPIC_MODEL"
+  assert_nonempty "$GW_SONNET" "Gateway: sonnet alias maps a default model (ANTHROPIC_DEFAULT_SONNET_MODEL)"
+
+  if grep -q '"ANTHROPIC_MODEL"' "$WINHOME/.claude/settings.json" 2>/dev/null; then
+    fail "Gateway: ANTHROPIC_MODEL hard pin is retired - remove it (the alias slots are authoritative)"
+  else
+    pass "Gateway: no ANTHROPIC_MODEL hard pin (the alias slots are authoritative)"
+  fi
 
   # The base URL must NOT end in /v1: Claude Code appends /v1/messages itself,
   # and a base that already carries it produces .../v1/v1/messages, which the
@@ -323,24 +329,24 @@ else
     *)    pass "Gateway: ANTHROPIC_BASE_URL has no trailing /v1 (Claude Code appends it)" ;;
   esac
 
-  # A gateway that needs no key must not be handed one it will reject: Zen
-  # validates x-api-key and ignores Authorization, so ANTHROPIC_API_KEY must be
-  # absent while ANTHROPIC_AUTH_TOKEN is the supported carrier.
+  # Console validates the Authorization bearer, so ANTHROPIC_API_KEY
+  # (x-api-key) must be absent while ANTHROPIC_AUTH_TOKEN is the carrier. The
+  # token must be a real oc_sk_ key: the fragment placeholder worked while the
+  # route demanded no credential, which the Go harness does not.
   if grep -q '"ANTHROPIC_API_KEY"' "$WINHOME/.claude/settings.json" 2>/dev/null; then
-    fail "Gateway: ANTHROPIC_API_KEY absent (Zen rejects x-api-key; use ANTHROPIC_AUTH_TOKEN)"
+    fail "Gateway: ANTHROPIC_API_KEY absent (Console validates the bearer; use ANTHROPIC_AUTH_TOKEN)"
   else
     pass "Gateway: ANTHROPIC_API_KEY absent (correct carrier is ANTHROPIC_AUTH_TOKEN)"
   fi
 
   # A model outside Claude Code's catalog needs a behavesAs mapping, or every
   # invocation prints [claude-code:unrecognized_model] to stderr and any harness
-  # that captures stderr sees a spurious error.
-  if [ -n "$GW_MODEL" ]; then
-    if grep -q '"behavesAs"' "$WINHOME/.claude/settings.json" 2>/dev/null; then
-      pass "Gateway: modelPicker carries behavesAs (no unrecognized_model noise)"
-    else
-      skip "Gateway: modelPicker carries behavesAs" "no behavesAs in settings.json"
-    fi
+  # that captures stderr sees a spurious error. Fragment v3 rows all carry one,
+  # so its absence is a defect, not a skip.
+  if grep -q '"behavesAs"' "$WINHOME/.claude/settings.json" 2>/dev/null; then
+    pass "Gateway: modelPicker carries behavesAs (no unrecognized_model noise)"
+  else
+    fail "Gateway: modelPicker rows must set behavesAs (otherwise every call logs unrecognized_model)"
   fi
 fi
 

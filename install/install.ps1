@@ -818,8 +818,8 @@ elseif (-not (Test-StageDone $state 'wsl')) {
 if ($OpenCodeOnly) {
     Write-Warn2 "Stage 6 skipped (-OpenCodeOnly): interactive secrets setup remains pending"
 } elseif (-not (Test-StageDone $state 'secrets')) {
-    Write-Info "Stage 6: secrets setup (interactive)"
-    powershell -ExecutionPolicy Bypass -File (Join-Path $script:BundleRoot 'install\secrets-setup.ps1')
+    Write-Info "Stage 6: key provisioning (interactive)"
+    powershell -ExecutionPolicy Bypass -File (Join-Path $script:BundleRoot 'install\opencode-key-setup.ps1')
     Complete-Stage $state 'secrets'
 }
 

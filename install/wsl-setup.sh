@@ -99,6 +99,14 @@ if ! done_step deploy-config; then
   render "$CFG/claude-creds-symlink-watcher.sh" /root/.local/bin/claude-creds-symlink-watcher.sh
   chmod 755 /root/.local/bin/claude-creds-symlink-watcher.sh
   install -m 755 "$CFG/ensure-claude-creds-watcher.sh" /root/.local/bin/ensure-claude-creds-watcher.sh
+  if [ "$SKIP_CLAUDE" = "0" ]; then
+    # Claude Code in WSL reads /root/.claude/settings.json, which nothing else
+    # creates. Render the same settings fragment the Windows side applies -
+    # hooks dropped (they are Windows-shelled), model/auth config intact.
+    python3 "$CFG/deploy-claude-settings.py" \
+      "$BUNDLE_ROOT/config/settings/settings.fragment.json" \
+      /root/.claude/settings.json "$WIN_USER"
+  fi
   note "WSL config + boot hook + watchers deployed"
   mark_step deploy-config
 fi
