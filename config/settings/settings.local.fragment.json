@@ -1,6 +1,6 @@
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://opencode.ai/zen"
+    "ANTHROPIC_BASE_URL": "https://opencode.ai/inference/go/anthropic"
   },
   "overrideKeys": [
     "env.ANTHROPIC_BASE_URL"

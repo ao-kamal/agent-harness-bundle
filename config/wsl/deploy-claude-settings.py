@@ -4,22 +4,23 @@
 #
 #   python3 $CFG/deploy-claude-settings.py <fragment.json> </root/.claude/settings.json> [WIN_USER]
 #
-# Same merge semantics as install.ps1's embedded version (kept in step with
+# Merge with the same semantics as install.ps1's Sync-SettingsFragments (kept step with
 # it deliberately; a comment change here must be mirrored there):
 #
-#   - `stored` is read BEFORE merge(): merge() setdefaults the fragment's
-#     _hbFragmentVersion into the live data, so reading it afterwards yields
-#     stored == fragVer and the gate silently no-ops. Caught by reproduction
-#     on 2026-10-29.
-#   - overrideKeys: fragment-wins dot paths, only when the fragment version
-#     is newer than the stored one.
-#   - removedKeys: dot paths deleted from live at the same version gate.
+#   - stored is read BEFORE merge(): merge() setdefaults the fragment's
+#     _hbFragmentVersion into the live data, so reading it afterwards always
+#     yielded the new value and the version gate silently no-opped. The same
+#     defect, found the same way, was fixed in install.ps1's
+#     Sync-SettingsFragments; both implementations must stay in step.
+#   - The fragment version is stamped unconditionally so a downgrade cannot
+#     make an old fragment re-apply forever.
+#   - overrideKeys/deleteKeys are merge machinery: never merged into the live
+#     file; deleteKeys is consumed at the version gate like apply_overrides,
+#     because a merged key can never delete a dead one.
 #   - ANTHROPIC_AUTH_TOKEN is a live-owned secret: it is not in overrideKeys,
 #     so a real key on an updating machine can never be clobbered by the
 #     fragment's placeholder. Fresh machines receive the placeholder and get
-#     a real key via secrets-setup.ps1.
-#   - overrideKeys/removedKeys are merge machinery and are stripped from the
-#     live file every run.
+#     a real key via opencode-key-setup.ps1.
 #
 # WSL differences from the Windows apply: the fragment's `hooks` key is
 # dropped (its commands are Windows-shelled paths that do not run in WSL
@@ -46,6 +47,8 @@ if os.path.exists(dst_path):
 
 def merge(a, b):
     for k, v in b.items():
+        if k in ("_hbFragmentVersion", "overrideKeys", "deleteKeys"):
+            continue
         if isinstance(v, dict) and isinstance(a.get(k), dict):
             merge(a[k], v)
         elif isinstance(v, list) and isinstance(a.get(k), list):
@@ -54,6 +57,7 @@ def merge(a, b):
             a.setdefault(k, v)
 
 def apply_overrides(a, b, overrides):
+    # fragment-wins for keys explicitly listed in overrideKeys (dot paths)
     for path in overrides:
         keys = path.split('.')
         src, dst = b, a
@@ -65,26 +69,30 @@ def apply_overrides(a, b, overrides):
         if ok and keys[-1] in src:
             dst[keys[-1]] = src[keys[-1]]
 
-def drop_paths(a, overrides):
-    for path in overrides:
+def apply_deletions(a, paths):
+    # A fragment can only ever set a key, never remove one; dead keys (a
+    # retired pin, a stale discovery flag, a leftover ANTHROPIC_API_KEY) would
+    # otherwise survive every later fragment forever.
+    for path in paths:
         keys = path.split('.')
-        src = a
+        parent = a
         ok = True
         for k in keys[:-1]:
-            if not isinstance(src, dict) or not isinstance(src.get(k), dict):
+            if not isinstance(parent, dict) or not isinstance(parent.get(k), dict):
                 ok = False; break
-            src = src[k]
-        if ok and isinstance(src, dict) and keys[-1] in src:
-            del src[keys[-1]]
+            parent = parent[k]
+        if ok and isinstance(parent, dict):
+            parent.pop(keys[-1], None)
 
 stored = data.get('_hbFragmentVersion', 0)
 merge(data, frag)
 fragVer = frag.get('_hbFragmentVersion', 1)
 if fragVer > stored:
     apply_overrides(data, frag, frag.get('overrideKeys', []))
-    drop_paths(data, frag.get('removedKeys', []))
-    data['_hbFragmentVersion'] = fragVer
-for k in ('overrideKeys', 'removedKeys'):
+    apply_deletions(data, frag.get('deleteKeys', []))
+# Stamp unconditionally: a downgrade must not let an old fragment re-apply.
+data['_hbFragmentVersion'] = fragVer
+for k in ('overrideKeys', 'deleteKeys'):
     data.pop(k, None)
 
 with open(dst_path, "w", encoding="utf-8") as fh:

@@ -71,7 +71,7 @@ OAuth identity is never sent to the gateway.
 **No `ANTHROPIC_MODEL` hard pin.** Fragment v2 pinned the model; that makes
 every `/model` pick inert in new sessions. v3 removed the pin, and the merge
 now deletes `env.ANTHROPIC_MODEL` and the retired discovery flag from live
-settings on version bump via the fragment's `removedKeys` list - the same
+settings on version bump via the fragment's `deleteKeys` list - the same
 version gate that `apply_overrides` uses, because the merge can only overwrite
 keys that still exist in the fragment, never delete.
 
