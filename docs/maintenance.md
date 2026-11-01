@@ -25,13 +25,11 @@ The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies t
 
 ## Rotating the OpenCode key
 
-The key lives in exactly one machine-local file: `%USERPROFILE%\.config\opencode\key`. When OpenCode's console flow hands you a fresh `oc_sk_` key, replace that single line and run:
+Rotation is the OpenCode CLI's own ritual: run `opencode auth login opencode`, pick API key (service account), paste the `oc_sk_` key. That paste is the whole ceremony — everything downstream is automatic. The login store (`credential` table in `%USERPROFILE%\.local\share\opencode\opencode.db`, newest `active=1` row for integration `opencode`) is the machine's source of truth, and the **OpenCode Key Sync** scheduled task (registered once via `install\register-key-sync-task.ps1`; at logon + every 5 minutes) mirrors it into Windows `~/.claude/settings.json` and WSL `/root/.claude/settings.json` — verified against the Console models endpoint first, only when the key actually changed, and only touching `env.ANTHROPIC_AUTH_TOKEN` in either file.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File install\opencode-key-setup.ps1 -Sync
-```
+Propagation happens within five minutes of the paste, no command needed. The same machinery self-heals a redesigned lane while you're away.
 
-One command, both lanes: `-Sync` verifies the key against the Console models endpoint first (a GET that spends no tokens — a key that fails verification writes nothing at all), then patches `env.ANTHROPIC_AUTH_TOKEN` in Windows `~/.claude/settings.json` and WSL `/root/.claude/settings.json`, and nothing else in either file. The key is never echoed, never stored in the bundle repo, and never passed on a command line (the WSL patch receives it on stdin). First-time provisioning — the script's plain no-flag path, which the installer calls as Stage 6 — creates the canonical file as part of writing the key; after that, rotation never goes interactive again. Bundle update runs preserve a real key in place: the fragment merge only replaces the shipped placeholder, never a provisioned value.
+For machines without the OpenCode app, or when you want to override it deliberately: the cache file `%USERPROFILE%\.config\opencode\key` works as fallback — replace its single line and run `powershell -ExecutionPolicy Bypass -File install\opencode-key-setup.ps1 -Sync` to push it to both lanes immediately (a failing verification writes nothing at all). The key never echoes, never enters the bundle repo, and never rides a command line (the store read and the WSL patch keep key material off argv and out of logs). First-time provisioning without the app uses the plain no-flag path the installer calls as Stage 6. Bundle update runs preserve a real key in place: the fragment merge only replaces the shipped placeholder, never a provisioned value. Removing the bundle? `install\uninstall.ps1` knows the task and its launcher VBS.
 
 ## Re-run the smoke test after ANY infrastructure change
 

@@ -22,6 +22,15 @@ if (Get-ScheduledTask -TaskName 'Cass Watch Daemon' -ErrorAction SilentlyContinu
     }
 }
 
+# 1a. OpenCode Key Sync scheduled task (key-rotation propagation)
+if (Get-ScheduledTask -TaskName 'OpenCode Key Sync' -ErrorAction SilentlyContinue) {
+    if (Confirm-Step "Remove the 'OpenCode Key Sync' scheduled task?") {
+        Stop-ScheduledTask -TaskName 'OpenCode Key Sync' -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName 'OpenCode Key Sync' -Confirm:$false
+        Write-Ok "task removed"
+    }
+}
+
 # 1b. Hermes adapter rollback
 $hermesHomeDir = $env:HERMES_HOME
 if ([string]::IsNullOrWhiteSpace($hermesHomeDir)) { $hermesHomeDir = Join-Path $env:LOCALAPPDATA 'hermes' }
@@ -89,7 +98,7 @@ if (Confirm-Step "scoop uninstall the flywheel tools (bv, cm, caam, dcg, slb, we
 # 7. .local\bin drops
 if (Confirm-Step "Remove the .local\bin binaries the installer placed (cass, br, ms, fmd, branch-back)?") {
     $lb = Join-Path $env:USERPROFILE '.local\bin'
-    foreach ($b in @('cass.exe','br.exe','ms.exe','fmd.exe','branch-back','branch-back.cmd','cass-watch-hidden.vbs')) {
+    foreach ($b in @('cass.exe','br.exe','ms.exe','fmd.exe','branch-back','branch-back.cmd','cass-watch-hidden.vbs','opencode-key-sync-hidden.vbs')) {
         Remove-Item (Join-Path $lb $b) -Force -ErrorAction SilentlyContinue
     }
     Write-Ok ".local\bin cleaned"

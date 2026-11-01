@@ -1,12 +1,19 @@
 # opencode-key-setup.ps1 - Stage 6 of install.ps1: the OpenCode Console key.
 #
-# One canonical copy of the key lives in %USERPROFILE%\.config\opencode\key,
-# machine-local and outside the bundle (it is a public repo). This script is
-# the writer of the whole chain: it verifies the key against the Console
-# models endpoint first - a GET that spends no tokens, unlike an inference
-# call - then patches exactly one field, env.ANTHROPIC_AUTH_TOKEN, in both
-# settings lanes: Windows ~/.claude/settings.json and WSL
-# /root/.claude/settings.json. Nothing else in either file is rewritten.
+# One cached copy of the key lives in %USERPROFILE%\.config\opencode\key,
+# machine-local and outside the bundle (it is a public repo). The real
+# source of truth is OpenCode's own login store: `opencode auth login
+# opencode` writes the pasted key into the `credential` table of
+# .local\share\opencode\opencode.db (measured: the newest active=1 row for
+# integration opencode with value type "key"). -Sync -Auto reads that row,
+# treats the cache file as a fallback for machines without the store, and
+# only when the key actually changed does it verify against the Console
+# models endpoint - a GET that spends no tokens - then patches exactly one
+# field, env.ANTHROPIC_AUTH_TOKEN, in both settings lanes: Windows
+# ~/.claude/settings.json and WSL /root/.claude/settings.json. Nothing
+# else in either file is rewritten. install\register-key-sync-task.ps1
+# wires -Sync -Auto into a 'OpenCode Key Sync' scheduled task (at logon +
+# every 5 minutes) so rotation propagates unattended.
 #
 # Rotation flow: replace the single line in the canonical key file (or paste
 # the key once when the file does not exist yet), then run:
@@ -22,7 +29,7 @@
 # route). If Claude Code is signed in to a claude.ai account, run /logout in
 # a session first so that login is never sent to the gateway.
 
-param([switch]$Sync)
+param([switch]$Sync, [switch]$Auto)
 
 $ErrorActionPreference = 'Stop'
 
@@ -52,6 +59,50 @@ function Read-CanonicalKey {
         exit 1
     }
     return $key
+}
+
+# Lenient variant for the unattended -Auto path: a malformed cache is
+# treated as absent rather than a hard failure, so the scheduled tick
+# never flames out on a stray byte.
+function Get-CachedKey {
+    if (-not (Test-Path $CanonPath)) { return $null }
+    $key = (Get-Content $CanonPath -Raw).Trim()
+    if ($key -notmatch ('^' + $PlaceholderPattern + '$')) { return $null }
+    return $key
+}
+
+# Source of truth: OpenCode's own login store. `opencode auth login
+# opencode` (API key, service account) lands the pasted key in the
+# credential table of the app's storage db as the newest active row for
+# integration opencode. Read-only sqlite access; the value is a JSON
+# object {"type":"key","key":"oc_sk_..."} - confirmed by inspecting the
+# live store. Returns $null (with the reason in $script:StoreErr) when
+# the store or the active key is absent, so fallback to the cache file
+# stays the single quiet path.
+$script:StoreErr = $null
+function Read-OpencodeStoreKey {
+    $script:StoreErr = $null
+    $dbPath = Join-Path $env:USERPROFILE '.local\share\opencode\opencode.db'
+    if (-not (Test-Path $dbPath)) {
+        $script:StoreErr = 'no opencode.db (OpenCode app not installed here)'
+        return $null
+    }
+    # Python one-liner uses single quotes only: the argv bridge strips
+    # embedded double quotes (measured earlier on the wsl transit; the
+    # direct python invocation inherits the same hazard). All SQL literals
+    # are ? placeholders, so no apostrophes nest inside the python strings.
+    $code = "import sqlite3,json,os;db=os.path.expanduser('~/.local/share/opencode/opencode.db');con=sqlite3.connect('file:'+db+'?mode=ro',uri=True);row=con.execute('select value from credential where integration_id=? and active=1 order by time_updated desc limit 1',('opencode',)).fetchone();v=json.loads(row[0]) if row else {};print(v.get('key') if v.get('type')=='key' else '')"
+    try {
+        $out = python -c $code 2>&1
+        if ($LASTEXITCODE -ne 0) { $script:StoreErr = ($out -join ' ').Trim(); return $null }
+        $key = (($out | Select-Object -Last 1) -as [string]).Trim()
+        if ($key -match ('^' + $PlaceholderPattern + '$')) { return $key }
+        $script:StoreErr = 'store reachable but no active key row (oauth login or none)'
+        return $null
+    } catch {
+        $script:StoreErr = $_.Exception.Message
+        return $null
+    }
 }
 
 # Returns the model count the workspace exposes (>= 0 on success), -1 on
@@ -175,10 +226,36 @@ if (-not (Test-Path $SettingsPath)) {
 }
 
 if ($Sync) {
+    if ($Auto) {
+        # Unattended path (scheduled tick): the login store is the source
+        # of truth, the cache file is the fallback. Never interactive: a
+        # tick with no usable source exits 0 quietly, no Read-Host.
+        $storeKey = Read-OpencodeStoreKey
+        if ($storeKey) {
+            $cached = Get-CachedKey
+            if ($cached -eq $storeKey) {
+                Write-Host "OpenCode key sync: store and cache agree - nothing to do."
+                exit 0
+            }
+            Write-Host "OpenCode login store carries a different active key than the cache - syncing lanes." -ForegroundColor Cyan
+            Invoke-Provision -Key $storeKey
+            exit 0
+        }
+        $cached = Get-CachedKey
+        if ($cached) {
+            Write-Host "OpenCode store unavailable ($script:StoreErr) - falling back to the cache file."
+            Invoke-Provision -Key $cached
+            exit 0
+        }
+        Write-Host "OpenCode key sync: no source available ($script:StoreErr; no cache file). Nothing provisioned." -ForegroundColor Yellow
+        exit 0
+    }
+
     $key = Read-CanonicalKey
     if (-not $key) {
         Write-Host "No canonical key yet at $CanonPath." -ForegroundColor Cyan
         Write-ConsoleHint
+        Write-Host "   Tip: if this machine has the OpenCode app, -Sync -Auto seeds the cache from its login store (no prompt)."
         Write-Host ""
         $key = (Read-Host "Paste the oc_sk_ key").Trim()
         if ($key -notmatch ('^' + $PlaceholderPattern + '$')) {
