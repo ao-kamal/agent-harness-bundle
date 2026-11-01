@@ -53,6 +53,18 @@ asks for it, writes it into the live `settings.json`, and verifies it against
 the Console models endpoint - a GET that spends no tokens, unlike an inference
 call. The key never enters the bundle repository.
 
+The key's canonical copy is machine-local: `%USERPROFILE%\.config\opencode\key`,
+one plain-text line. Rotation is one command - `install\opencode-key-setup.ps1 -Sync`
+verifies the key first (a failing verification writes nothing at all), then
+patches only `env.ANTHROPIC_AUTH_TOKEN` in Windows `~/.claude/settings.json`
+and WSL `/root/.claude/settings.json`, rewriting nothing else in either file.
+The WSL lane is skipped with a printed reason when its settings file is absent
+rather than half-created. First-time provisioning (the Stage 6 prompt) stores
+the canonical copy as part of writing the key; after that, rotating means
+replacing one line in that file and running `-Sync`. Never pass a key on a
+command line: the script takes it from the canonical file or an interactive
+prompt, and the WSL patch receives it on stdin.
+
 ## The traps, each of which cost real time
 
 **The base URL must not end in `/v1`.** Claude Code appends `/v1/messages`

@@ -23,6 +23,16 @@ powershell -ExecutionPolicy Bypass -File install\install-opencode.ps1 -Update # 
 
 The `-Update` flag is what makes updates land: `install.ps1 -Update` re-copies the skills payload and re-renders the **shared** `~/.claude` templates. `install-grok.ps1 -Update` only refreshes the thin Grok adapter (memory junction, compat pin, compact hook). `install-hermes.ps1 -Update` re-applies its config keys and refreshes the SOUL.md rules block in place. `install-opencode.ps1 -Update` re-merges `opencode.jsonc`, which means it also re-establishes the user-only ACL on the Agent Mail bearer file. State files: `%USERPROFILE%\.harness-bundle-state.json`, `%USERPROFILE%\.harness-bundle-grok-state.json`, `%USERPROFILE%\.harness-bundle-hermes-state.json`, and `%USERPROFILE%\.harness-bundle-opencode-state.json`. A plain re-run without `-Update` only resumes unfinished stages — it will NOT refresh already-deployed config. You will not lose your API keys, your `.env.private` secrets, or anything you've customized in your own project folders either way.
 
+## Rotating the OpenCode key
+
+The key lives in exactly one machine-local file: `%USERPROFILE%\.config\opencode\key`. When OpenCode's console flow hands you a fresh `oc_sk_` key, replace that single line and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install\opencode-key-setup.ps1 -Sync
+```
+
+One command, both lanes: `-Sync` verifies the key against the Console models endpoint first (a GET that spends no tokens — a key that fails verification writes nothing at all), then patches `env.ANTHROPIC_AUTH_TOKEN` in Windows `~/.claude/settings.json` and WSL `/root/.claude/settings.json`, and nothing else in either file. The key is never echoed, never stored in the bundle repo, and never passed on a command line (the WSL patch receives it on stdin). First-time provisioning — the script's plain no-flag path, which the installer calls as Stage 6 — creates the canonical file as part of writing the key; after that, rotation never goes interactive again. Bundle update runs preserve a real key in place: the fragment merge only replaces the shipped placeholder, never a provisioned value.
+
 ## Re-run the smoke test after ANY infrastructure change
 
 This is the one habit worth making automatic, not just after installing: **run `bash install/smoke-test.sh` again any time you change anything about the underlying setup** — not only right after the installer finishes. That includes: updating WSL itself, changing `.wslconfig`, reinstalling a tool outside the bundle's own update path, changing networking mode, moving the bundle folder, or anything touching scheduled tasks or the WSL boot hook.
